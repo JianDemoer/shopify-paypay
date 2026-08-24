@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { AlertCircle, Loader2 } from 'lucide-react';
@@ -8,15 +8,12 @@ import styles from './CheckoutComponents.module.css';
 
 interface PaymentStepProps {
   clientSecret: string | null;
+  publishableKey?: string;
   isLoading?: boolean;
   returnUrl?: string;
   onSuccess?: (paymentIntentId: string) => void;
   onError?: (error: string) => void;
 }
-
-const stripePromise = loadStripe(
-  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''
-);
 
 function PaymentForm({
   clientSecret,
@@ -133,6 +130,10 @@ function PaymentForm({
 
 export function PaymentStep(props: PaymentStepProps) {
   const [mounted, setMounted] = useState(false);
+  const stripePromise = useMemo(
+    () => loadStripe(props.publishableKey || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''),
+    [props.publishableKey]
+  );
 
   useEffect(() => {
     setMounted(true);

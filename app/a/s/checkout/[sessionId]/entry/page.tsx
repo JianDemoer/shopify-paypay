@@ -1,5 +1,6 @@
 import { ensureCheckoutSession } from '@/lib/checkout-sessions';
 import { verifyAppProxySearchParams } from '@/lib/shopify-app-proxy';
+import { getStoreConfig, publicStoreConfig } from '@/lib/store-configs';
 import { OmniCheckout } from './ui';
 
 interface PageProps {
@@ -8,15 +9,19 @@ interface PageProps {
 }
 
 export default async function AppProxyCheckoutEntry({ params, searchParams }: PageProps) {
-  if (!verifyAppProxySearchParams(searchParams || {})) {
+  const session = await ensureCheckoutSession(params.sessionId, searchParams?.cid || '');
+  const fullStoreConfig = await getStoreConfig(session.storeId || session.shopDomain);
+
+  if (!verifyAppProxySearchParams(searchParams || {}, fullStoreConfig.shopifyAppProxySecret)) {
     return <div>Invalid checkout signature.</div>;
   }
 
-  const session = await ensureCheckoutSession(params.sessionId, searchParams?.cid || '');
+  const storeConfig = publicStoreConfig(fullStoreConfig);
 
   return (
     <OmniCheckout
       initialSession={session}
+      storeConfig={storeConfig}
       initialStep={searchParams?.step || 'contact'}
       cid={searchParams?.cid || session.cid}
     />

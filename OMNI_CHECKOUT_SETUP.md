@@ -56,26 +56,30 @@ http://127.0.0.1:3000/a/s/checkout/opc_xxx/entry?cid=cid_xxx
 ## Required Environment
 
 ```bash
-NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=pk_test_xxx
-STRIPE_SECRET_KEY=sk_test_xxx
-STRIPE_WEBHOOK_SECRET=whsec_xxx
-
-NEXT_PUBLIC_PAYPAL_CLIENT_ID=...
-PAYPAL_CLIENT_ID=...
-PAYPAL_CLIENT_SECRET=...
-PAYPAL_ENV=sandbox
-
-SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
-SHOPIFY_ADMIN_ACCESS_TOKEN=shpat_xxx
-SHOPIFY_APP_PROXY_SECRET=your_shopify_app_secret
-SHOPIFY_ORDER_MODE=draft_order
-
+ADMIN_CONFIG_TOKEN=change_this_token
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
-
-NEXT_PUBLIC_UPSELL_PRODUCT_ID=gid://shopify/Product/...
-NEXT_PUBLIC_UPSELL_VARIANT_ID=gid://shopify/ProductVariant/...
 ```
+
+Optional fallback single-store variables can still be set in `.env.local`.
+For multi-store usage, configure each store at:
+
+```text
+/admin/stores
+```
+
+Per store, fill:
+
+- Shopify store domain
+- Shopify Storefront token
+- Shopify Admin access token
+- Shopify App Proxy secret
+- Stripe publishable key
+- Stripe secret key
+- Stripe webhook secret
+- PayPal client ID and secret
+- Order mode: Draft Order or Direct Order
+- Upsell product and variant GIDs
 
 ## Shopify Theme Injection
 

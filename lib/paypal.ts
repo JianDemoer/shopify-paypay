@@ -1,16 +1,20 @@
-const PAYPAL_API_BASE = process.env.PAYPAL_ENV === 'live'
-  ? 'https://api-m.paypal.com'
-  : 'https://api-m.sandbox.paypal.com';
+import type { StoreConfig } from './store-configs';
 
-async function getPayPalAccessToken() {
-  const clientId = process.env.PAYPAL_CLIENT_ID;
-  const secret = process.env.PAYPAL_CLIENT_SECRET;
+function paypalApiBase(config: StoreConfig) {
+  return config.paypalEnv === 'live'
+    ? 'https://api-m.paypal.com'
+    : 'https://api-m.sandbox.paypal.com';
+}
+
+async function getPayPalAccessToken(config: StoreConfig) {
+  const clientId = config.paypalClientId;
+  const secret = config.paypalClientSecret;
 
   if (!clientId || !secret) {
     throw new Error('PayPal credentials are not configured');
   }
 
-  const response = await fetch(`${PAYPAL_API_BASE}/v1/oauth2/token`, {
+  const response = await fetch(`${paypalApiBase(config)}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${Buffer.from(`${clientId}:${secret}`).toString('base64')}`,
@@ -28,13 +32,14 @@ async function getPayPalAccessToken() {
 }
 
 export async function createPayPalOrder(input: {
+  storeConfig: StoreConfig;
   amount: number;
   currency: string;
   checkoutSessionId: string;
   cid?: string;
 }) {
-  const accessToken = await getPayPalAccessToken();
-  const response = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders`, {
+  const accessToken = await getPayPalAccessToken(input.storeConfig);
+  const response = await fetch(`${paypalApiBase(input.storeConfig)}/v2/checkout/orders`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -64,9 +69,9 @@ export async function createPayPalOrder(input: {
   return response.json();
 }
 
-export async function capturePayPalOrder(orderId: string) {
-  const accessToken = await getPayPalAccessToken();
-  const response = await fetch(`${PAYPAL_API_BASE}/v2/checkout/orders/${orderId}/capture`, {
+export async function capturePayPalOrder(storeConfig: StoreConfig, orderId: string) {
+  const accessToken = await getPayPalAccessToken(storeConfig);
+  const response = await fetch(`${paypalApiBase(storeConfig)}/v2/checkout/orders/${orderId}/capture`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,

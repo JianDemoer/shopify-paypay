@@ -11,15 +11,12 @@ function SuccessPageContent() {
   const searchParams = useSearchParams();
   const { clearCart } = useCart();
   const [mounted, setMounted] = useState(false);
-  const [order, setOrder] = useState<{ orderNumber: number; shopifyOrderId: string } | null>(null);
+  const [order, setOrder] = useState<{ orderNumber: number; shopifyOrderId: string; shopDomain?: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   // Extract payment intent ID from URL (Stripe redirects here)
   const paymentIntentId = searchParams.get('payment_intent');
   const checkoutSessionId = searchParams.get('checkout_session_id');
-
-  // Get Shopify store domain for admin link
-  const shopifyStoreDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || '';
 
   // Fetch order data from cache (webhook already created the order)
   // Uses recursive polling with retry logic (up to 10 attempts, 2-second intervals)
@@ -47,6 +44,7 @@ function SuccessPageContent() {
           setOrder({
             orderNumber: data.orderNumber,
             shopifyOrderId: data.shopifyOrderId,
+            shopDomain: data.shopDomain,
           });
           setLoading(false);
           console.log(`✅ Order #${data.orderNumber} found`);
@@ -122,11 +120,11 @@ function SuccessPageContent() {
         </div>
 
         {/* Developer Demo Link: View in Shopify Admin */}
-        {order && shopifyStoreDomain && (
+        {order?.shopDomain && (
           <div className={styles.devPortalBox}>
             <p className={styles.devPortalLabel}>Developer Demo</p>
             <a
-              href={`https://admin.shopify.com/store/${shopifyStoreDomain.split('.')[0]}/orders/${order.shopifyOrderId}`}
+              href={`https://admin.shopify.com/store/${order.shopDomain.split('.')[0]}/orders/${order.shopifyOrderId}`}
               target="_blank"
               rel="noopener noreferrer"
               className={styles.devPortalLink}

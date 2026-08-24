@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createShopifyDraftOrder } from '@/lib/shopify-admin';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+import { getStoreConfig } from '@/lib/store-configs';
 
 /**
  * POST /api/payment/create-intent
@@ -17,6 +16,8 @@ export async function POST(request: NextRequest) {
       email,
       cartId,
       checkoutSessionId,
+      storeId,
+      shopDomain,
       cid,
       lineItems,
       shippingAddress,
@@ -37,10 +38,13 @@ export async function POST(request: NextRequest) {
 
     let draftOrderId = '';
     let draftOrderInvoiceUrl = '';
-    const shouldCreateDraftOrder = process.env.SHOPIFY_ORDER_MODE === 'draft_order' && cartId;
+    const storeConfig = await getStoreConfig(storeId || shopDomain);
+    const stripe = new Stripe(storeConfig.stripeSecretKey);
+    const shouldCreateDraftOrder = storeConfig.orderMode === 'draft_order' && cartId;
 
     if (shouldCreateDraftOrder) {
       const draftOrder = await createShopifyDraftOrder({
+        storeConfig,
         email: email || shippingAddress?.email || 'noreply@draft-order.local',
         firstName: shippingAddress?.firstName || 'Guest',
         lastName: shippingAddress?.lastName || 'Customer',
@@ -73,6 +77,8 @@ export async function POST(request: NextRequest) {
         lastName: shippingAddress?.lastName || '',
         cartId: cartId || checkoutSessionId || '',
         checkoutSessionId: checkoutSessionId || cartId || '',
+        storeId: storeConfig.id,
+        shopDomain: storeConfig.shopDomain,
         cid: cid || '',
         sourceUrl: sourceUrl || '',
         shippingMethod: shippingMethod || '',

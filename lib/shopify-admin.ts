@@ -3,19 +3,7 @@
  * Handles order creation, tagging, and idempotency checks
  */
 
-const SHOPIFY_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
-const ADMIN_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-
-// Log configuration at startup
-if (!SHOPIFY_DOMAIN) {
-  console.error('❌ ERROR: SHOPIFY_STORE_DOMAIN not set in .env.local');
-}
-if (!ADMIN_TOKEN) {
-  console.error('❌ ERROR: SHOPIFY_ADMIN_ACCESS_TOKEN not set in .env.local');
-}
-if (SHOPIFY_DOMAIN && ADMIN_TOKEN) {
-  console.log(`✅ Shopify Admin configured for: ${SHOPIFY_DOMAIN}`);
-}
+import type { StoreConfig } from './store-configs';
 
 export interface LineItem {
   variantId: string;
@@ -39,6 +27,7 @@ export interface ShippingAddress {
 }
 
 export interface OrderData {
+  storeConfig: StoreConfig;
   email: string;
   firstName: string;
   lastName: string;
@@ -63,14 +52,15 @@ function restVariantId(variantId: string) {
  * Check if an order already exists for this payment intent (idempotency)
  */
 async function checkOrderByPaymentIntentId(
+  storeConfig: StoreConfig,
   paymentIntentId: string
 ): Promise<any | null> {
   try {
     const response = await fetch(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/orders.json?status=any&fields=id,tags,financial_status`,
+      `https://${storeConfig.shopDomain}/admin/api/2024-01/orders.json?status=any&fields=id,tags,financial_status`,
       {
         headers: {
-          'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+          'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
           'Content-Type': 'application/json',
         },
       }
@@ -107,6 +97,7 @@ export async function createShopifyOrder(
 
     // STEP 1: Check if order already exists (idempotency guard)
     const existingOrder = await checkOrderByPaymentIntentId(
+      orderData.storeConfig,
       orderData.paymentIntentId
     );
 
@@ -159,11 +150,11 @@ export async function createShopifyOrder(
     ].filter((attribute) => attribute.value);
 
     const response = await fetch(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/orders.json`,
+      `https://${orderData.storeConfig.shopDomain}/admin/api/2024-01/orders.json`,
       {
         method: 'POST',
         headers: {
-          'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+          'X-Shopify-Access-Token': orderData.storeConfig.shopifyAdminAccessToken,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -239,11 +230,11 @@ export async function createShopifyDraftOrder(
   }));
 
   const response = await fetch(
-    `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders.json`,
+    `https://${orderData.storeConfig.shopDomain}/admin/api/2024-01/draft_orders.json`,
     {
       method: 'POST',
       headers: {
-        'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+        'X-Shopify-Access-Token': orderData.storeConfig.shopifyAdminAccessToken,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
@@ -298,14 +289,15 @@ export async function createShopifyDraftOrder(
 }
 
 export async function completeShopifyDraftOrder(input: {
+  storeConfig: StoreConfig;
   draftOrderId: string;
 }): Promise<{ id: string; order_number: number }> {
   const response = await fetch(
-    `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders/${input.draftOrderId}/complete.json`,
+    `https://${input.storeConfig.shopDomain}/admin/api/2024-01/draft_orders/${input.draftOrderId}/complete.json`,
     {
       method: 'PUT',
       headers: {
-        'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+        'X-Shopify-Access-Token': input.storeConfig.shopifyAdminAccessToken,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ payment_pending: false }),
@@ -328,13 +320,13 @@ export async function completeShopifyDraftOrder(input: {
 /**
  * Get order details from Shopify (for verification)
  */
-export async function getShopifyOrder(orderId: string): Promise<any> {
+export async function getShopifyOrder(storeConfig: StoreConfig, orderId: string): Promise<any> {
   try {
     const response = await fetch(
-      `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/orders/${orderId}.json`,
+      `https://${storeConfig.shopDomain}/admin/api/2024-01/orders/${orderId}.json`,
       {
         headers: {
-          'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+          'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
           'Content-Type': 'application/json',
         },
       }

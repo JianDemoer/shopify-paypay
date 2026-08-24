@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCheckoutSession } from '@/lib/checkout-sessions';
+import { getStoreConfig } from '@/lib/store-configs';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const session = await createCheckoutSession(body);
+    const storeConfig = await getStoreConfig(body.storeId || body.shopDomain || body.shop);
+    const session = await createCheckoutSession({
+      ...body,
+      storeId: storeConfig.id,
+      shopDomain: storeConfig.shopDomain,
+    });
 
     return NextResponse.json({
       sessionId: session.id,

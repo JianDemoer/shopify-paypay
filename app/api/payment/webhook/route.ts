@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { completeShopifyDraftOrder, createShopifyOrder } from '@/lib/shopify-admin';
+import { getStoreConfig, listStoreConfigs, type StoreConfig } from '@/lib/store-configs';
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
+async function verifyStripeEvent(body: string, signature: string) {
+  const configs = await listStoreConfigs();
+  for (const config of configs) {
+    const webhookSecret = process.env.VERCEL_ENV === 'production'
+      ? config.stripeWebhookSecretProd || config.stripeWebhookSecret
+      : config.stripeWebhookSecret;
+    if (!webhookSecret) continue;
 
-// Get webhook secret from environment (prefer production secret if available)
-const getWebhookSecret = () => {
-  return process.env.VERCEL_ENV === 'production' 
-    ? process.env.STRIPE_WEBHOOK_SECRET_PROD 
-    : process.env.STRIPE_WEBHOOK_SECRET;
-};
+    try {
+      const stripe = new Stripe(config.stripeSecretKey);
+      return {
+        event: stripe.webhooks.constructEvent(body, signature, webhookSecret),
+        storeConfig: config,
+      };
+    } catch {
+      // Try the next store config.
+    }
+  }
+
+  throw new Error('No Stripe webhook secret matched this signature');
+}
 /**
  * Background task: Create Shopify order asynchronously
  * Separated from webhook response to allow immediate 200 OK acknowledgment
@@ -25,6 +39,7 @@ async function processOrderAsync(
   lineItems: string,
   shippingAddress: string,
   cartId: string,
+  storeConfig: StoreConfig,
   attribution: {
     checkoutSessionId?: string;
     cid?: string;
@@ -53,8 +68,9 @@ async function processOrderAsync(
     const parsedUtm = attribution.utm ? JSON.parse(attribution.utm) : {};
 
     const shopifyOrder = attribution.draftOrderId
-      ? await completeShopifyDraftOrder({ draftOrderId: attribution.draftOrderId })
+      ? await completeShopifyDraftOrder({ storeConfig, draftOrderId: attribution.draftOrderId })
       : await createShopifyOrder({
+          storeConfig,
           email,
           lineItems: convertedLineItems,
           shippingAddress: parsedShippingAddress,
@@ -129,17 +145,6 @@ async function processOrderAsync(
 export async function POST(request: NextRequest) {
   try {
     const signature = request.headers.get('stripe-signature');
-    const webhookSecret = getWebhookSecret();
-
-    // Validate webhook secret is configured
-    if (!webhookSecret) {
-      console.error('❌ STRIPE_WEBHOOK_SECRET is not configured in environment variables');
-      return NextResponse.json(
-        { error: 'Webhook secret not configured' },
-        { status: 500 }
-      );
-    }
-
     const body = await request.text();
 
     if (!signature) {
@@ -149,8 +154,11 @@ export async function POST(request: NextRequest) {
 
     // STEP 1: Verify Stripe signature (prevents spoofing)
     let event;
+    let verifiedStoreConfig: StoreConfig;
     try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
+      const verified = await verifyStripeEvent(body, signature);
+      event = verified.event;
+      verifiedStoreConfig = verified.storeConfig;
     } catch (err) {
       console.error('❌ Webhook signature verification failed:', err);
       return NextResponse.json(
@@ -169,6 +177,8 @@ export async function POST(request: NextRequest) {
         shippingAddress,
         cartId,
         checkoutSessionId,
+        storeId,
+        shopDomain,
         cid,
         sourceUrl,
         shippingMethod,
@@ -198,7 +208,8 @@ export async function POST(request: NextRequest) {
       // Still fast (~50ms for Shopify API call)
       
       try {
-        await processOrderAsync(paymentIntent, email, firstName, lastName, lineItems, shippingAddress, cartId, {
+        const storeConfig = await getStoreConfig(storeId || shopDomain || verifiedStoreConfig.id);
+        await processOrderAsync(paymentIntent, email, firstName, lastName, lineItems, shippingAddress, cartId, storeConfig, {
           checkoutSessionId,
           cid,
           sourceUrl,

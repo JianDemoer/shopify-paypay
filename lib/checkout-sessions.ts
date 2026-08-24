@@ -13,6 +13,8 @@ export interface CheckoutLineItem {
 
 export interface CheckoutSession {
   id: string;
+  storeId: string;
+  shopDomain: string;
   cid: string;
   currency: string;
   items: CheckoutLineItem[];
@@ -138,6 +140,8 @@ export async function createCheckoutSession(input: any): Promise<CheckoutSession
 
   const session: CheckoutSession = {
     id: makeId('opc'),
+    storeId: String(input?.storeId || input?.shopDomain || input?.shop || 'default'),
+    shopDomain: String(input?.shopDomain || input?.shop || ''),
     cid: String(input?.cid || makeId('cid')),
     currency: String(input?.currency || 'USD'),
     items,

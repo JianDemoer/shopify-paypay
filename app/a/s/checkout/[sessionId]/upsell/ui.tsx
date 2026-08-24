@@ -3,17 +3,19 @@
 import { useMemo, useState } from 'react';
 import { PaymentStep } from '@/components/checkout/PaymentStep';
 import type { CheckoutSession } from '@/lib/checkout-sessions';
+import type { PublicStoreConfig } from '@/lib/store-configs';
 import styles from './Upsell.module.css';
 
 interface UpsellCheckoutProps {
   session: CheckoutSession;
+  storeConfig: PublicStoreConfig;
   cid: string;
   parentPaymentIntentId: string;
 }
 
 const UPSELL_PRICE = 19.97;
 
-export function UpsellCheckout({ session, cid, parentPaymentIntentId }: UpsellCheckoutProps) {
+export function UpsellCheckout({ session, storeConfig, cid, parentPaymentIntentId }: UpsellCheckoutProps) {
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -52,6 +54,8 @@ export function UpsellCheckout({ session, cid, parentPaymentIntentId }: UpsellCh
           currency: session.currency.toLowerCase(),
           cartId: `${session.id}:upsell`,
           checkoutSessionId: session.id,
+          storeId: storeConfig.id,
+          shopDomain: storeConfig.shopDomain,
           cid,
           sourceUrl: window.location.href,
           shippingMethod: 'ships-with-original-order',
@@ -60,8 +64,8 @@ export function UpsellCheckout({ session, cid, parentPaymentIntentId }: UpsellCh
           orderType: 'post_purchase_upsell',
           lineItems: [
             {
-              productId: process.env.NEXT_PUBLIC_UPSELL_PRODUCT_ID || originalItem?.productId,
-              variantId: process.env.NEXT_PUBLIC_UPSELL_VARIANT_ID || originalItem?.variantId,
+              productId: storeConfig.upsellProductId || originalItem?.productId,
+              variantId: storeConfig.upsellVariantId || originalItem?.variantId,
               quantity: 1,
               title: 'Post-Purchase Add-On Pack',
               price: UPSELL_PRICE,
@@ -110,7 +114,12 @@ export function UpsellCheckout({ session, cid, parentPaymentIntentId }: UpsellCh
         </div>
 
         {clientSecret ? (
-          <PaymentStep clientSecret={clientSecret} returnUrl={returnUrl} onError={setError} />
+          <PaymentStep
+            clientSecret={clientSecret}
+            publishableKey={storeConfig.stripePublishableKey}
+            returnUrl={returnUrl}
+            onError={setError}
+          />
         ) : (
           <div className={styles.actions}>
             <button type="button" className={styles.accept} disabled={loading} onClick={acceptOffer}>

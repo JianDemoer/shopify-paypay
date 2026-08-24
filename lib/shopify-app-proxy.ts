@@ -1,9 +1,10 @@
 import crypto from 'crypto';
 
-const APP_PROXY_SECRET = process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET || '';
-
-export function verifyAppProxySearchParams(searchParams: Record<string, string | string[] | undefined>) {
-  if (!APP_PROXY_SECRET) return true;
+export function verifyAppProxySearchParams(
+  searchParams: Record<string, string | string[] | undefined>,
+  secret = process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET || ''
+) {
+  if (!secret) return true;
 
   const signature = stringValue(searchParams.signature);
   if (!signature) return false;
@@ -20,7 +21,7 @@ export function verifyAppProxySearchParams(searchParams: Record<string, string |
 
   const message = sortedPairs.join('');
   const digest = crypto
-    .createHmac('sha256', APP_PROXY_SECRET)
+    .createHmac('sha256', secret)
     .update(message)
     .digest('hex');
 

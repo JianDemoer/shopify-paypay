@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { capturePayPalOrder } from '@/lib/paypal';
 import { createShopifyOrder } from '@/lib/shopify-admin';
+import { getStoreConfig } from '@/lib/store-configs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,6 +9,8 @@ export async function POST(request: NextRequest) {
     const {
       orderId,
       checkoutSessionId,
+      storeId,
+      shopDomain,
       cid,
       amount,
       currency = 'USD',
@@ -22,7 +25,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid PayPal capture input' }, { status: 400 });
     }
 
-    const capture = await capturePayPalOrder(orderId);
+    const storeConfig = await getStoreConfig(storeId || shopDomain);
+    const capture = await capturePayPalOrder(storeConfig, orderId);
     const payer = capture?.payer || {};
     const captureId = capture?.purchase_units?.[0]?.payments?.captures?.[0]?.id || orderId;
     const email = payer.email_address || shippingAddress?.email || 'noreply@paypal-payment.local';
@@ -30,6 +34,7 @@ export async function POST(request: NextRequest) {
     const lastName = shippingAddress?.lastName || payer.name?.surname || 'Customer';
 
     const shopifyOrder = await createShopifyOrder({
+      storeConfig,
       email,
       firstName,
       lastName,

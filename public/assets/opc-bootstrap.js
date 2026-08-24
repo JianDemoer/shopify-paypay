@@ -60,6 +60,13 @@
     return json;
   }
 
+  function shopDomain() {
+    return (
+      window.Shopify && (window.Shopify.shop || window.Shopify.shopOrigin) ||
+      window.location.hostname
+    );
+  }
+
   async function startCheckout(event) {
     if (event) {
       event.preventDefault();
@@ -86,6 +93,7 @@
     try {
       var clientId = cid();
       var session = await post("/api/checkout/session", {
+        shopDomain: shopDomain(),
         cid: clientId,
         productId: window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product
           ? "gid://shopify/Product/" + window.ShopifyAnalytics.meta.product.id

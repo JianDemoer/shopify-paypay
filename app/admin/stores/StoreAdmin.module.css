@@ -1,0 +1,175 @@
+.page {
+  min-height: 100vh;
+  padding: 32px;
+  background: #f6f7f9;
+  color: #1f2933;
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 24px;
+  max-width: 1180px;
+  margin: 0 auto 24px;
+}
+
+.header h1 {
+  margin: 0;
+  font-size: 30px;
+  letter-spacing: 0;
+}
+
+.header p {
+  margin: 8px 0 0;
+  color: #64707d;
+}
+
+.count {
+  min-width: 96px;
+  padding: 10px 14px;
+  border: 1px solid #d9dee7;
+  border-radius: 6px;
+  background: #fff;
+  text-align: center;
+  font-weight: 700;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, .75fr);
+  gap: 22px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.panel {
+  padding: 22px;
+  border: 1px solid #dfe3ea;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.panel h2 {
+  margin: 0 0 18px;
+  font-size: 18px;
+}
+
+.field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 13px;
+}
+
+.field span {
+  color: #4d5866;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 40px;
+  padding: 0 11px;
+  border: 1px solid #cfd6e0;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2933;
+  font-size: 14px;
+}
+
+.save {
+  width: 100%;
+  min-height: 46px;
+  margin-top: 8px;
+  border: 0;
+  border-radius: 5px;
+  background: #1473e6;
+  color: #fff;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.secondary {
+  width: 100%;
+  min-height: 40px;
+  margin: -3px 0 13px;
+  border: 1px solid #cfd6e0;
+  border-radius: 5px;
+  background: #fff;
+  color: #1f2933;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.save:disabled {
+  opacity: .7;
+  cursor: wait;
+}
+
+.message {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 5px;
+  background: #eef6ff;
+  color: #164b7a;
+  font-size: 13px;
+}
+
+.storeList {
+  display: grid;
+  gap: 12px;
+}
+
+.storeCard {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  padding: 15px;
+  border: 1px solid #dfe3ea;
+  border-radius: 7px;
+  background: #fbfcfe;
+  color: #1f2933;
+  text-align: left;
+  cursor: pointer;
+}
+
+.storeCard:hover {
+  border-color: #1473e6;
+}
+
+.storeCard strong {
+  font-size: 16px;
+}
+
+.storeCard span {
+  color: #536170;
+}
+
+.storeCard small {
+  color: #6a7480;
+}
+
+.empty {
+  color: #6a7480;
+}
+
+@media (max-width: 900px) {
+  .page {
+    padding: 18px;
+  }
+
+  .header {
+    display: block;
+  }
+
+  .count {
+    margin-top: 12px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}

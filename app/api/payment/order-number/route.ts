@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getCheckoutSession } from '@/lib/checkout-sessions';
+import { getStoreConfig } from '@/lib/store-configs';
 
 /**
  * GET: Retrieve order number by payment intent ID
@@ -14,6 +16,7 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const paymentIntentId = searchParams.get('payment_intent');
     const checkoutSessionId = searchParams.get('checkout_session_id');
+    const shopDomain = searchParams.get('shopDomain');
 
     if (!paymentIntentId && !checkoutSessionId) {
       return NextResponse.json(
@@ -22,12 +25,15 @@ export async function GET(req: Request) {
       );
     }
 
+    const session = checkoutSessionId ? await getCheckoutSession(checkoutSessionId) : null;
+    const storeConfig = await getStoreConfig(session?.storeId || session?.shopDomain || shopDomain);
+
     const shopifyResponse = await fetch(
-      `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2024-01/orders.json?status=any&limit=250&fields=id,order_number,tags`,
+      `https://${storeConfig.shopDomain}/admin/api/2024-01/orders.json?status=any&limit=250&fields=id,order_number,tags`,
       {
         method: 'GET',
         headers: {
-          'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_ACCESS_TOKEN || '',
+          'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
           'Content-Type': 'application/json',
         },
         // Critical: Don't cache the response
@@ -74,6 +80,7 @@ export async function GET(req: Request) {
       {
         orderNumber: order.order_number,
         shopifyOrderId: order.id,
+        shopDomain: storeConfig.shopDomain,
       },
       { status: 200 }
     );

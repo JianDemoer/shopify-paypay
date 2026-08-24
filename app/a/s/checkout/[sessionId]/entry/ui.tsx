@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PaymentStep } from '@/components/checkout/PaymentStep';
 import type { CheckoutSession } from '@/lib/checkout-sessions';
+import type { PublicStoreConfig } from '@/lib/store-configs';
 import styles from './OmniCheckout.module.css';
 
 type Step = 'contact' | 'shipping_method' | 'payment_method';
@@ -22,6 +23,7 @@ interface ContactState {
 
 interface OmniCheckoutProps {
   initialSession: CheckoutSession;
+  storeConfig: PublicStoreConfig;
   initialStep: string;
   cid: string;
 }
@@ -58,7 +60,7 @@ function loadScript(id: string, src: string) {
   document.head.appendChild(script);
 }
 
-export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutProps) {
+export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: OmniCheckoutProps) {
   const [step, setStepState] = useState<Step>(asStep(initialStep));
   const [session] = useState(initialSession);
   const [shippingMethod, setShippingMethod] = useState<'standard' | 'express'>('standard');
@@ -114,6 +116,8 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
       amount: total,
       currency: session.currency,
       checkoutSessionId: session.id,
+      storeId: storeConfig.id,
+      shopDomain: storeConfig.shopDomain,
       cid,
       sourceUrl: window.location.href,
       shippingMethod,
@@ -158,6 +162,8 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
           email: contact.email,
           cartId: session.id,
           checkoutSessionId: session.id,
+          storeId: storeConfig.id,
+          shopDomain: storeConfig.shopDomain,
           cid,
           utm: session.utm || {},
           shippingMethod,
@@ -202,7 +208,7 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
   });
 
   useEffect(() => {
-    const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+    const paypalClientId = storeConfig.paypalClientId;
     if (!paypalClientId || !paypalRef.current || paypalRenderedRef.current) return;
 
     const renderButtons = () => {
@@ -265,7 +271,7 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
     );
     const timer = window.setInterval(renderButtons, 300);
     return () => window.clearInterval(timer);
-  }, [cid, contact, session, shippingMethod, total]);
+  }, [cid, contact, session, shippingMethod, storeConfig.id, storeConfig.paypalClientId, storeConfig.shopDomain, total]);
 
   return (
     <div className={styles.page}>
@@ -299,7 +305,7 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
               <div className={styles.reserve}>Your order is reserved for 09:27</div>
               <div className={styles.paypalWrap}>
                 <div ref={paypalRef} />
-                {!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID && (
+                {!storeConfig.paypalClientId && (
                   <button className={styles.paypalButton} type="button" onClick={() => setError('PayPal is not configured yet.')}>
                     Pay with PayPal
                   </button>
@@ -359,6 +365,7 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
               {clientSecret ? (
                 <PaymentStep
                   clientSecret={clientSecret}
+                  publishableKey={storeConfig.stripePublishableKey}
                   returnUrl={`${window.location.origin}/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}`}
                   onError={setError}
                 />
