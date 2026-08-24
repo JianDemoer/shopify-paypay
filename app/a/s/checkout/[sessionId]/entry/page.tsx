@@ -1,4 +1,5 @@
 import { ensureCheckoutSession } from '@/lib/checkout-sessions';
+import { verifyAppProxySearchParams } from '@/lib/shopify-app-proxy';
 import { OmniCheckout } from './ui';
 
 interface PageProps {
@@ -7,6 +8,10 @@ interface PageProps {
 }
 
 export default function AppProxyCheckoutEntry({ params, searchParams }: PageProps) {
+  if (!verifyAppProxySearchParams(searchParams || {})) {
+    return <div>Invalid checkout signature.</div>;
+  }
+
   const session = ensureCheckoutSession(params.sessionId, searchParams?.cid || '');
 
   return (
