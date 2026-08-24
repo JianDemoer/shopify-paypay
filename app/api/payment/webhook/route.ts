@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createShopifyOrder } from '@/lib/shopify-admin';
+import { trackPurchase } from '@/lib/ads';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -24,7 +25,14 @@ async function processOrderAsync(
   lastName: string,
   lineItems: string,
   shippingAddress: string,
-  cartId: string
+  cartId: string,
+  attribution: {
+    checkoutSessionId?: string;
+    cid?: string;
+    sourceUrl?: string;
+    shippingMethod?: string;
+    utm?: string;
+  } = {}
 ) {
   try {
     // Parse metadata
@@ -40,6 +48,7 @@ async function processOrderAsync(
     }));
     
     const parsedShippingAddress = shippingAddress ? JSON.parse(shippingAddress) : {};
+    const parsedUtm = attribution.utm ? JSON.parse(attribution.utm) : {};
 
     // Create order in Shopify
     // This function includes idempotency check to prevent duplicates
@@ -49,6 +58,11 @@ async function processOrderAsync(
       shippingAddress: parsedShippingAddress,
       paymentIntentId: paymentIntent.id,
       cartId,
+      checkoutSessionId: attribution.checkoutSessionId || cartId,
+      cid: attribution.cid,
+      sourceUrl: attribution.sourceUrl,
+      shippingMethod: attribution.shippingMethod,
+      utm: parsedUtm,
       firstName: firstName || 'Guest',
       lastName: lastName || 'Customer',
     });
@@ -76,6 +90,21 @@ async function processOrderAsync(
 
     // Audit: order record is available for monitoring systems
     // console.log('📦 Order record:', orderRecord); // Uncomment for debugging
+
+    await trackPurchase({
+      eventId: `purchase:${paymentIntent.id}`,
+      orderId: String(shopifyOrder.id),
+      orderNumber: shopifyOrder.order_number,
+      amount: Number((paymentIntent.amount / 100).toFixed(2)),
+      currency: paymentIntent.currency,
+      email,
+      phone: parsedShippingAddress.phone,
+      cid: attribution.cid,
+      checkoutSessionId: attribution.checkoutSessionId || cartId,
+      sourceUrl: attribution.sourceUrl,
+      utm: parsedUtm,
+      lineItems: convertedLineItems,
+    });
   } catch (error) {
     console.error('❌ Background order processing failed:', error);
     // Note: This is a fire-and-forget pattern. For production systems with
@@ -143,7 +172,18 @@ export async function POST(request: NextRequest) {
     // STEP 2: Handle payment success
     if (event.type === 'payment_intent.succeeded') {
       const paymentIntent = event.data.object as any;
-      const { firstName, lastName, lineItems, shippingAddress, cartId } = paymentIntent.metadata;
+      const {
+        firstName,
+        lastName,
+        lineItems,
+        shippingAddress,
+        cartId,
+        checkoutSessionId,
+        cid,
+        sourceUrl,
+        shippingMethod,
+        utm,
+      } = paymentIntent.metadata;
 
       // Extract email from Stripe PaymentIntent (billing_details or charges)
       // Prefer Stripe's email over form email to ensure verified customer data
@@ -165,7 +205,13 @@ export async function POST(request: NextRequest) {
       // Still fast (~50ms for Shopify API call)
       
       try {
-        await processOrderAsync(paymentIntent, email, firstName, lastName, lineItems, shippingAddress, cartId);
+        await processOrderAsync(paymentIntent, email, firstName, lastName, lineItems, shippingAddress, cartId, {
+          checkoutSessionId,
+          cid,
+          sourceUrl,
+          shippingMethod,
+          utm,
+        });
       } catch (err) {
         console.error('🔴 Order processing failed:', err);
         // Order creation failed, but webhook already succeeded in Stripe

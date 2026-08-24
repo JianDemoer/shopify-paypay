@@ -19,6 +19,7 @@ if (SHOPIFY_DOMAIN && ADMIN_TOKEN) {
 
 export interface LineItem {
   variantId: string;
+  productId?: string;
   quantity: number;
   title?: string;
   price?: number;
@@ -45,6 +46,11 @@ export interface OrderData {
   shippingAddress: ShippingAddress;
   paymentIntentId: string;
   cartId?: string;
+  checkoutSessionId?: string;
+  cid?: string;
+  sourceUrl?: string;
+  shippingMethod?: string;
+  utm?: Record<string, string>;
 }
 
 /**
@@ -121,6 +127,25 @@ export async function createShopifyOrder(
     // Use provided names or fallback to defaults
     const firstName = orderData.firstName || 'Guest';
     const lastName = orderData.lastName || 'Customer';
+    const tags = [
+      'Stripe-Payment',
+      `payment_intent:${orderData.paymentIntentId}`,
+      orderData.cartId ? `checkout_session:${orderData.cartId}` : '',
+      orderData.cid ? `cid:${orderData.cid}` : '',
+    ].filter(Boolean).join(', ');
+
+    const noteAttributes = [
+      { name: 'payment_intent_id', value: orderData.paymentIntentId },
+      { name: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
+      { name: 'cid', value: orderData.cid || '' },
+      { name: 'source_url', value: orderData.sourceUrl || '' },
+      { name: 'shipping_method', value: orderData.shippingMethod || '' },
+      { name: 'utm_source', value: orderData.utm?.source || '' },
+      { name: 'utm_campaign', value: orderData.utm?.campaign || '' },
+      { name: 'utm_medium', value: orderData.utm?.medium || '' },
+      { name: 'utm_content', value: orderData.utm?.content || '' },
+      { name: 'utm_term', value: orderData.utm?.term || '' },
+    ].filter((attribute) => attribute.value);
 
     const response = await fetch(
       `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/orders.json`,
@@ -137,7 +162,8 @@ export async function createShopifyOrder(
             fulfillment_status: 'unfulfilled',
             
             // Tag with payment intent ID during creation (single API call)
-            tags: `Stripe-Payment, ${orderData.paymentIntentId}`,
+            tags,
+            note_attributes: noteAttributes,
 
             // Customer data with name and address
             customer: {
@@ -159,6 +185,7 @@ export async function createShopifyOrder(
               province: orderData.shippingAddress.province || '',
               zip: orderData.shippingAddress.zip,
               country: orderData.shippingAddress.country,
+              phone: orderData.shippingAddress.phone || '',
             },
 
             // Decrement inventory in real-time for demo visibility

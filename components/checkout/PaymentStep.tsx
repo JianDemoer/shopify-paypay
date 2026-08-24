@@ -9,6 +9,7 @@ import styles from './CheckoutComponents.module.css';
 interface PaymentStepProps {
   clientSecret: string | null;
   isLoading?: boolean;
+  returnUrl?: string;
   onSuccess?: (paymentIntentId: string) => void;
   onError?: (error: string) => void;
 }
@@ -20,6 +21,7 @@ const stripePromise = loadStripe(
 function PaymentForm({
   clientSecret,
   isLoading,
+  returnUrl,
   onSuccess,
   onError,
 }: PaymentStepProps) {
@@ -54,7 +56,7 @@ function PaymentForm({
       const result = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          return_url: `${window.location.origin}/checkout/success`,
+          return_url: returnUrl || `${window.location.origin}/checkout/success`,
         },
       });
 

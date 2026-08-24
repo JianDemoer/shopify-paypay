@@ -10,7 +10,19 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { amount, currency = 'usd', email, cartId, lineItems, shippingAddress } = body;
+    const {
+      amount,
+      currency = 'usd',
+      email,
+      cartId,
+      checkoutSessionId,
+      cid,
+      lineItems,
+      shippingAddress,
+      shippingMethod,
+      sourceUrl,
+      utm,
+    } = body;
 
     // Validation
     if (!amount || amount <= 0) {
@@ -32,7 +44,12 @@ export async function POST(request: NextRequest) {
       metadata: {
         firstName: shippingAddress?.firstName || '',
         lastName: shippingAddress?.lastName || '',
-        cartId: cartId || '',
+        cartId: cartId || checkoutSessionId || '',
+        checkoutSessionId: checkoutSessionId || cartId || '',
+        cid: cid || '',
+        sourceUrl: sourceUrl || '',
+        shippingMethod: shippingMethod || '',
+        utm: JSON.stringify(utm || {}),
         lineItems: JSON.stringify(lineItems || []),
         shippingAddress: JSON.stringify(shippingAddress || {}),
         // Note: email NOT stored in metadata; we'll extract from PaymentIntent in webhook

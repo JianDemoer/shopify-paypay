@@ -100,9 +100,16 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           amount: total,
+          currency: session.currency.toLowerCase(),
           email: contact.email,
           cartId: session.id,
+          checkoutSessionId: session.id,
+          cid,
+          utm: session.utm || {},
+          shippingMethod,
+          sourceUrl: window.location.href,
           lineItems: session.items.map((item) => ({
+            productId: item.productId,
             variantId: item.variantId,
             quantity: item.quantity,
             title: item.title,
@@ -220,6 +227,7 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
               {clientSecret ? (
                 <PaymentStep
                   clientSecret={clientSecret}
+                  returnUrl={`${window.location.origin}/checkout/success?checkout_session_id=${encodeURIComponent(session.id)}&cid=${encodeURIComponent(cid)}`}
                   onError={setError}
                 />
               ) : (
