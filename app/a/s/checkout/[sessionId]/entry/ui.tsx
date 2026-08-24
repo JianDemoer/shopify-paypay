@@ -30,10 +30,6 @@ const STEP_ORDER: Step[] = ['contact', 'shipping_method', 'payment_method'];
 
 declare global {
   interface Window {
-    fbq?: (...args: any[]) => void;
-    ttq?: {
-      track?: (event: string, payload?: Record<string, any>) => void;
-    };
     paypal?: {
       Buttons: (config: Record<string, any>) => {
         render: (selector: string | HTMLElement) => Promise<void>;
@@ -60,54 +56,6 @@ function loadScript(id: string, src: string) {
   script.async = true;
   script.src = src;
   document.head.appendChild(script);
-}
-
-function initBrowserPixels() {
-  const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID;
-  const tikTokPixelId = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
-
-  if (metaPixelId && !window.fbq) {
-    const fbq = function (...args: any[]) {
-      (fbq as any).callMethod ? (fbq as any).callMethod(...args) : (fbq as any).queue.push(args);
-    };
-    (fbq as any).queue = [];
-    (fbq as any).loaded = true;
-    (fbq as any).version = '2.0';
-    window.fbq = fbq;
-    loadScript('meta-pixel', 'https://connect.facebook.net/en_US/fbevents.js');
-    window.fbq('init', metaPixelId);
-  }
-
-  if (tikTokPixelId && !window.ttq) {
-    const ttq: any = {
-      _i: {},
-      _t: {},
-      _o: {},
-      methods: ['page', 'track', 'identify', 'instances', 'debug', 'on', 'off', 'once', 'ready', 'alias', 'group', 'enableCookie', 'disableCookie'],
-    };
-    ttq.setAndDefer = (target: any, method: string) => {
-      target[method] = (...args: any[]) => {
-        target.push([method, ...args]);
-      };
-    };
-    ttq.instance = (id: string) => {
-      const instance = ttq._i[id] || [];
-      for (const method of ttq.methods) ttq.setAndDefer(instance, method);
-      ttq._i[id] = instance;
-      return instance;
-    };
-    ttq.load = (id: string) => {
-      ttq._i[id] = [];
-      ttq._i[id]._u = 'https://analytics.tiktok.com/i18n/pixel/events.js';
-      ttq._t[id] = Date.now();
-      ttq._o[id] = {};
-      loadScript('tiktok-pixel', 'https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=' + id + '&lib=ttq');
-    };
-    for (const method of ttq.methods) ttq.setAndDefer(ttq, method);
-    window.ttq = ttq;
-    ttq.load(tikTokPixelId);
-    ttq.page();
-  }
 }
 
 export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutProps) {
@@ -250,10 +198,6 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
   const firstItem = session.items[0];
 
   useEffect(() => {
-    initBrowserPixels();
-  }, []);
-
-  useEffect(() => {
     paypalPayloadRef.current = paypalPayload();
   });
 
@@ -322,38 +266,6 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
     const timer = window.setInterval(renderButtons, 300);
     return () => window.clearInterval(timer);
   }, [cid, contact, session, shippingMethod, total]);
-
-  useEffect(() => {
-    const payload = {
-      value: total,
-      currency: session.currency,
-      content_ids: session.items.map((item) => item.variantId),
-      contents: session.items.map((item) => ({
-        id: item.variantId,
-        quantity: item.quantity,
-        item_price: item.price,
-      })),
-      checkout_session_id: session.id,
-      cid,
-    };
-
-    window.fbq?.('track', 'InitiateCheckout', payload, { eventID: `initiate:${session.id}` });
-    window.ttq?.track?.('InitiateCheckout', payload);
-  }, [cid, session.currency, session.id, session.items, total]);
-
-  useEffect(() => {
-    if (step !== 'payment_method') return;
-
-    const payload = {
-      value: total,
-      currency: session.currency,
-      checkout_session_id: session.id,
-      cid,
-    };
-
-    window.fbq?.('track', 'AddPaymentInfo', payload, { eventID: `payment_info:${session.id}` });
-    window.ttq?.track?.('AddPaymentInfo', payload);
-  }, [cid, session.currency, session.id, step, total]);
 
   return (
     <div className={styles.page}>

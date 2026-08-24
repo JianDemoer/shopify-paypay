@@ -17,9 +17,9 @@ Next.js Shopify + Stripe project.
 - PayPal JS SDK checkout with server-side capture and Shopify order creation
 - Existing Stripe webhook to create Shopify Admin orders after payment succeeds
 - Shopify order tags/note attributes for `payment_intent`, `checkout_session`,
-  `cid`, source URL, shipping method, and UTM attribution
-- Optional Meta CAPI and TikTok Events API Purchase tracking after Shopify
-  order creation succeeds
+  `cid`, source URL, shipping method, and UTM attribution. Shopify's native
+  pixel/channel integrations can use the resulting Shopify order for ad
+  attribution.
 - Durable checkout sessions through Upstash Redis REST in production, with
   local file storage fallback for development
 - Post-purchase upsell route after the main Stripe payment succeeds
@@ -69,14 +69,6 @@ SHOPIFY_STORE_DOMAIN=your-store.myshopify.com
 SHOPIFY_ADMIN_ACCESS_TOKEN=shpat_xxx
 SHOPIFY_APP_PROXY_SECRET=your_shopify_app_secret
 SHOPIFY_ORDER_MODE=draft_order
-
-META_PIXEL_ID=123456789
-META_ACCESS_TOKEN=EAAB...
-TIKTOK_PIXEL_ID=C...
-TIKTOK_ACCESS_TOKEN=act....
-
-NEXT_PUBLIC_META_PIXEL_ID=123456789
-NEXT_PUBLIC_TIKTOK_PIXEL_ID=C...
 
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
@@ -167,19 +159,20 @@ UPSTASH_REDIS_REST_URL=...
 UPSTASH_REDIS_REST_TOKEN=...
 ```
 
-## Ad Tracking Flow
+## Shopify Attribution
 
-After `payment_intent.succeeded`:
+This project does not send Meta/TikTok events directly. Attribution data is
+kept on the Shopify order so Shopify's native pixel/channel integrations can
+handle ad reporting.
+
+After payment succeeds:
 
 1. The webhook verifies the Stripe signature.
 2. The webhook creates a paid Shopify Admin order.
 3. The order is tagged with `payment_intent:...`, `checkout_session:...`, and
    `cid:...`.
-4. The same webhook sends server-side Purchase events to Meta/TikTok when the
-   corresponding environment variables are configured.
-5. Browser-side `InitiateCheckout` and `AddPaymentInfo` events fire on the
-   custom checkout when `NEXT_PUBLIC_META_PIXEL_ID` or
-   `NEXT_PUBLIC_TIKTOK_PIXEL_ID` is configured.
+4. The order note attributes include UTM, source URL, checkout session, and
+   shipping method for backend attribution and reporting.
 
 ## PayPal Flow
 

@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { trackPurchase } from '@/lib/ads';
 import { capturePayPalOrder } from '@/lib/paypal';
 import { createShopifyOrder } from '@/lib/shopify-admin';
 
@@ -44,21 +43,6 @@ export async function POST(request: NextRequest) {
       shippingMethod,
       orderType: 'paypal_checkout',
       utm: utm || {},
-    });
-
-    await trackPurchase({
-      eventId: `purchase:paypal:${captureId}`,
-      orderId: String(shopifyOrder.id),
-      orderNumber: shopifyOrder.order_number,
-      amount: Number(amount),
-      currency,
-      email,
-      phone: shippingAddress?.phone,
-      cid,
-      checkoutSessionId,
-      sourceUrl,
-      utm: utm || {},
-      lineItems,
     });
 
     return NextResponse.json({

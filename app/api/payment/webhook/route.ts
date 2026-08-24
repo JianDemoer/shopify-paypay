@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { completeShopifyDraftOrder, createShopifyOrder } from '@/lib/shopify-admin';
-import { trackPurchase } from '@/lib/ads';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -96,20 +95,6 @@ async function processOrderAsync(
     // Audit: order record is available for monitoring systems
     // console.log('📦 Order record:', orderRecord); // Uncomment for debugging
 
-    await trackPurchase({
-      eventId: `purchase:${paymentIntent.id}`,
-      orderId: String(shopifyOrder.id),
-      orderNumber: shopifyOrder.order_number,
-      amount: Number((paymentIntent.amount / 100).toFixed(2)),
-      currency: paymentIntent.currency,
-      email,
-      phone: parsedShippingAddress.phone,
-      cid: attribution.cid,
-      checkoutSessionId: attribution.checkoutSessionId || cartId,
-      sourceUrl: attribution.sourceUrl,
-      utm: parsedUtm,
-      lineItems: convertedLineItems,
-    });
   } catch (error) {
     console.error('❌ Background order processing failed:', error);
     // Note: This is a fire-and-forget pattern. For production systems with
