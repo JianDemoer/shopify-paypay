@@ -4,7 +4,7 @@ import { createCheckoutSession } from '@/lib/checkout-sessions';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const session = createCheckoutSession(body);
+    const session = await createCheckoutSession(body);
 
     return NextResponse.json({
       sessionId: session.id,

@@ -53,6 +53,7 @@ next-env.d.ts
 *.bak
 *.tmp
 .cache/
+.data/
 cypress/screenshots/
 cypress/videos/
 
@@ -62,4 +63,3 @@ cypress/videos/
 /playwright/.auth/
 test-results/
 .traceviewer-state.json
-

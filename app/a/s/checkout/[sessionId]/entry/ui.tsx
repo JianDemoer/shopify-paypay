@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { PaymentStep } from '@/components/checkout/PaymentStep';
 import type { CheckoutSession } from '@/lib/checkout-sessions';
 import styles from './OmniCheckout.module.css';
@@ -28,6 +28,20 @@ interface OmniCheckoutProps {
 
 const STEP_ORDER: Step[] = ['contact', 'shipping_method', 'payment_method'];
 
+declare global {
+  interface Window {
+    fbq?: (...args: any[]) => void;
+    ttq?: {
+      track?: (event: string, payload?: Record<string, any>) => void;
+    };
+    paypal?: {
+      Buttons: (config: Record<string, any>) => {
+        render: (selector: string | HTMLElement) => Promise<void>;
+      };
+    };
+  }
+}
+
 function asStep(step: string): Step {
   return STEP_ORDER.includes(step as Step) ? step as Step : 'contact';
 }
@@ -39,13 +53,74 @@ function money(value: number, currency = 'USD') {
   }).format(value);
 }
 
+function loadScript(id: string, src: string) {
+  if (document.getElementById(id)) return;
+  const script = document.createElement('script');
+  script.id = id;
+  script.async = true;
+  script.src = src;
+  document.head.appendChild(script);
+}
+
+function initBrowserPixels() {
+  const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID;
+  const tikTokPixelId = process.env.NEXT_PUBLIC_TIKTOK_PIXEL_ID;
+
+  if (metaPixelId && !window.fbq) {
+    const fbq = function (...args: any[]) {
+      (fbq as any).callMethod ? (fbq as any).callMethod(...args) : (fbq as any).queue.push(args);
+    };
+    (fbq as any).queue = [];
+    (fbq as any).loaded = true;
+    (fbq as any).version = '2.0';
+    window.fbq = fbq;
+    loadScript('meta-pixel', 'https://connect.facebook.net/en_US/fbevents.js');
+    window.fbq('init', metaPixelId);
+  }
+
+  if (tikTokPixelId && !window.ttq) {
+    const ttq: any = {
+      _i: {},
+      _t: {},
+      _o: {},
+      methods: ['page', 'track', 'identify', 'instances', 'debug', 'on', 'off', 'once', 'ready', 'alias', 'group', 'enableCookie', 'disableCookie'],
+    };
+    ttq.setAndDefer = (target: any, method: string) => {
+      target[method] = (...args: any[]) => {
+        target.push([method, ...args]);
+      };
+    };
+    ttq.instance = (id: string) => {
+      const instance = ttq._i[id] || [];
+      for (const method of ttq.methods) ttq.setAndDefer(instance, method);
+      ttq._i[id] = instance;
+      return instance;
+    };
+    ttq.load = (id: string) => {
+      ttq._i[id] = [];
+      ttq._i[id]._u = 'https://analytics.tiktok.com/i18n/pixel/events.js';
+      ttq._t[id] = Date.now();
+      ttq._o[id] = {};
+      loadScript('tiktok-pixel', 'https://analytics.tiktok.com/i18n/pixel/events.js?sdkid=' + id + '&lib=ttq');
+    };
+    for (const method of ttq.methods) ttq.setAndDefer(ttq, method);
+    window.ttq = ttq;
+    ttq.load(tikTokPixelId);
+    ttq.page();
+  }
+}
+
 export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutProps) {
   const [step, setStepState] = useState<Step>(asStep(initialStep));
   const [session] = useState(initialSession);
   const [shippingMethod, setShippingMethod] = useState<'standard' | 'express'>('standard');
   const [clientSecret, setClientSecret] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [paypalLoading, setPaypalLoading] = useState(false);
   const [error, setError] = useState('');
+  const paypalRef = useRef<HTMLDivElement | null>(null);
+  const paypalRenderedRef = useRef(false);
+  const paypalPayloadRef = useRef<Record<string, any> | null>(null);
   const [contact, setContact] = useState<ContactState>({
     email: 'stevejianj@gmail.com',
     firstName: 'Jian',
@@ -84,6 +159,37 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
 
   function contactIsValid() {
     return contact.email && contact.firstName && contact.lastName && contact.address1 && contact.city && contact.province && contact.country && contact.zip;
+  }
+
+  function paypalPayload() {
+    return {
+      amount: total,
+      currency: session.currency,
+      checkoutSessionId: session.id,
+      cid,
+      sourceUrl: window.location.href,
+      shippingMethod,
+      utm: session.utm || {},
+      lineItems: session.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        title: item.title,
+        price: item.price,
+      })),
+      shippingAddress: {
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        address1: contact.address1,
+        address2: contact.address2,
+        city: contact.city,
+        province: contact.province,
+        zip: contact.zip,
+        country: contact.country,
+        email: contact.email,
+        phone: contact.phone,
+      },
+    };
   }
 
   async function preparePayment() {
@@ -143,6 +249,112 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
   const activeIndex = STEP_ORDER.indexOf(step);
   const firstItem = session.items[0];
 
+  useEffect(() => {
+    initBrowserPixels();
+  }, []);
+
+  useEffect(() => {
+    paypalPayloadRef.current = paypalPayload();
+  });
+
+  useEffect(() => {
+    const paypalClientId = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID;
+    if (!paypalClientId || !paypalRef.current || paypalRenderedRef.current) return;
+
+    const renderButtons = () => {
+      if (!window.paypal || !paypalRef.current || paypalRenderedRef.current) return;
+      paypalRenderedRef.current = true;
+      window.paypal.Buttons({
+        style: {
+          layout: 'horizontal',
+          color: 'gold',
+          shape: 'rect',
+          label: 'paypal',
+          height: 42,
+        },
+        onClick: () => {
+          if (!contactIsValid()) {
+            setError('Please complete contact and shipping address before using PayPal.');
+            return false;
+          }
+          setError('');
+          return true;
+        },
+        createOrder: async () => {
+          setPaypalLoading(true);
+          const response = await fetch('/api/payment/paypal/create-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(paypalPayloadRef.current),
+          });
+          if (!response.ok) throw new Error('Unable to create PayPal order.');
+          const json = await response.json();
+          return json.orderId;
+        },
+        onApprove: async (data: { orderID: string }) => {
+          const response = await fetch('/api/payment/paypal/capture-order', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...paypalPayloadRef.current, orderId: data.orderID }),
+          });
+          if (!response.ok) throw new Error('Unable to capture PayPal payment.');
+          window.location.href = `/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}&payment_intent=${encodeURIComponent(`paypal:${data.orderID}`)}`;
+        },
+        onError: (err: Error) => {
+          setPaypalLoading(false);
+          setError(err.message || 'PayPal payment failed.');
+        },
+        onCancel: () => {
+          setPaypalLoading(false);
+        },
+      }).render(paypalRef.current);
+    };
+
+    if (window.paypal) {
+      renderButtons();
+      return;
+    }
+
+    loadScript(
+      'paypal-sdk',
+      `https://www.paypal.com/sdk/js?client-id=${encodeURIComponent(paypalClientId)}&currency=${encodeURIComponent(session.currency.toUpperCase())}&intent=capture`
+    );
+    const timer = window.setInterval(renderButtons, 300);
+    return () => window.clearInterval(timer);
+  }, [cid, contact, session, shippingMethod, total]);
+
+  useEffect(() => {
+    const payload = {
+      value: total,
+      currency: session.currency,
+      content_ids: session.items.map((item) => item.variantId),
+      contents: session.items.map((item) => ({
+        id: item.variantId,
+        quantity: item.quantity,
+        item_price: item.price,
+      })),
+      checkout_session_id: session.id,
+      cid,
+    };
+
+    window.fbq?.('track', 'InitiateCheckout', payload, { eventID: `initiate:${session.id}` });
+    window.ttq?.track?.('InitiateCheckout', payload);
+  }, [cid, session.currency, session.id, session.items, total]);
+
+  useEffect(() => {
+    if (step !== 'payment_method') return;
+
+    const payload = {
+      value: total,
+      currency: session.currency,
+      checkout_session_id: session.id,
+      cid,
+    };
+
+    window.fbq?.('track', 'AddPaymentInfo', payload, { eventID: `payment_info:${session.id}` });
+    window.ttq?.track?.('AddPaymentInfo', payload);
+  }, [cid, session.currency, session.id, step, total]);
+
   return (
     <div className={styles.page}>
       <main className={styles.main}>
@@ -173,7 +385,15 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
             <section className={styles.formPanel}>
               <div className={styles.urgency}>🔥 This product is very popular. Please complete your payment within 10 minutes; otherwise, the item could sell out!</div>
               <div className={styles.reserve}>Your order is reserved for 09:27</div>
-              <button className={styles.paypalButton} type="button">Pay with PayPal</button>
+              <div className={styles.paypalWrap}>
+                <div ref={paypalRef} />
+                {!process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID && (
+                  <button className={styles.paypalButton} type="button" onClick={() => setError('PayPal is not configured yet.')}>
+                    Pay with PayPal
+                  </button>
+                )}
+                {paypalLoading && <span>Opening PayPal...</span>}
+              </div>
               <div className={styles.divider}>OR</div>
 
               <h2>Contact information</h2>
@@ -227,7 +447,7 @@ export function OmniCheckout({ initialSession, initialStep, cid }: OmniCheckoutP
               {clientSecret ? (
                 <PaymentStep
                   clientSecret={clientSecret}
-                  returnUrl={`${window.location.origin}/checkout/success?checkout_session_id=${encodeURIComponent(session.id)}&cid=${encodeURIComponent(cid)}`}
+                  returnUrl={`${window.location.origin}/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}`}
                   onError={setError}
                 />
               ) : (

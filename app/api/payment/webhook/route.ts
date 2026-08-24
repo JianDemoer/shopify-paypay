@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
-import { createShopifyOrder } from '@/lib/shopify-admin';
+import { completeShopifyDraftOrder, createShopifyOrder } from '@/lib/shopify-admin';
 import { trackPurchase } from '@/lib/ads';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
@@ -31,6 +31,9 @@ async function processOrderAsync(
     cid?: string;
     sourceUrl?: string;
     shippingMethod?: string;
+    parentPaymentIntentId?: string;
+    orderType?: string;
+    draftOrderId?: string;
     utm?: string;
   } = {}
 ) {
@@ -50,22 +53,24 @@ async function processOrderAsync(
     const parsedShippingAddress = shippingAddress ? JSON.parse(shippingAddress) : {};
     const parsedUtm = attribution.utm ? JSON.parse(attribution.utm) : {};
 
-    // Create order in Shopify
-    // This function includes idempotency check to prevent duplicates
-    const shopifyOrder = await createShopifyOrder({
-      email,
-      lineItems: convertedLineItems,
-      shippingAddress: parsedShippingAddress,
-      paymentIntentId: paymentIntent.id,
-      cartId,
-      checkoutSessionId: attribution.checkoutSessionId || cartId,
-      cid: attribution.cid,
-      sourceUrl: attribution.sourceUrl,
-      shippingMethod: attribution.shippingMethod,
-      utm: parsedUtm,
-      firstName: firstName || 'Guest',
-      lastName: lastName || 'Customer',
-    });
+    const shopifyOrder = attribution.draftOrderId
+      ? await completeShopifyDraftOrder({ draftOrderId: attribution.draftOrderId })
+      : await createShopifyOrder({
+          email,
+          lineItems: convertedLineItems,
+          shippingAddress: parsedShippingAddress,
+          paymentIntentId: paymentIntent.id,
+          cartId,
+          checkoutSessionId: attribution.checkoutSessionId || cartId,
+          cid: attribution.cid,
+          sourceUrl: attribution.sourceUrl,
+          shippingMethod: attribution.shippingMethod,
+          parentPaymentIntentId: attribution.parentPaymentIntentId,
+          orderType: attribution.orderType,
+          utm: parsedUtm,
+          firstName: firstName || 'Guest',
+          lastName: lastName || 'Customer',
+        });
 
     console.log(
       `✅ Shopify order created: #${shopifyOrder.order_number} (ID: ${shopifyOrder.id})`
@@ -182,6 +187,9 @@ export async function POST(request: NextRequest) {
         cid,
         sourceUrl,
         shippingMethod,
+        parentPaymentIntentId,
+        orderType,
+        draftOrderId,
         utm,
       } = paymentIntent.metadata;
 
@@ -210,6 +218,9 @@ export async function POST(request: NextRequest) {
           cid,
           sourceUrl,
           shippingMethod,
+          parentPaymentIntentId,
+          orderType,
+          draftOrderId,
           utm,
         });
       } catch (err) {

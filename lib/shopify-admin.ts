@@ -50,7 +50,13 @@ export interface OrderData {
   cid?: string;
   sourceUrl?: string;
   shippingMethod?: string;
+  parentPaymentIntentId?: string;
+  orderType?: string;
   utm?: Record<string, string>;
+}
+
+function restVariantId(variantId: string) {
+  return variantId.includes('gid://') ? variantId.split('/').pop() || variantId : variantId;
 }
 
 /**
@@ -117,7 +123,7 @@ export async function createShopifyOrder(
     // STEP 2: Create new order with inventory tracking
     const lineItemsPayload = orderData.lineItems.map((item) => {
       return {
-        variant_id: item.variantId,
+        variant_id: restVariantId(item.variantId),
         quantity: item.quantity,
         title: item.title,
         price: item.price,
@@ -129,13 +135,18 @@ export async function createShopifyOrder(
     const lastName = orderData.lastName || 'Customer';
     const tags = [
       'Stripe-Payment',
+      orderData.orderType === 'post_purchase_upsell' ? 'Post-Purchase-Upsell' : '',
+      orderData.orderType === 'paypal_checkout' ? 'PayPal-Payment' : '',
       `payment_intent:${orderData.paymentIntentId}`,
+      orderData.parentPaymentIntentId ? `parent_payment:${orderData.parentPaymentIntentId}` : '',
       orderData.cartId ? `checkout_session:${orderData.cartId}` : '',
       orderData.cid ? `cid:${orderData.cid}` : '',
     ].filter(Boolean).join(', ');
 
     const noteAttributes = [
       { name: 'payment_intent_id', value: orderData.paymentIntentId },
+      { name: 'parent_payment_intent_id', value: orderData.parentPaymentIntentId || '' },
+      { name: 'order_type', value: orderData.orderType || 'checkout' },
       { name: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
       { name: 'cid', value: orderData.cid || '' },
       { name: 'source_url', value: orderData.sourceUrl || '' },
@@ -213,6 +224,105 @@ export async function createShopifyOrder(
     console.error('Error creating Shopify order:', error);
     throw error;
   }
+}
+
+export async function createShopifyDraftOrder(
+  orderData: Omit<OrderData, 'paymentIntentId'> & { draftKey: string }
+): Promise<{ id: string; invoice_url?: string }> {
+  const firstName = orderData.firstName || 'Guest';
+  const lastName = orderData.lastName || 'Customer';
+  const lineItemsPayload = orderData.lineItems.map((item) => ({
+    variant_id: restVariantId(item.variantId),
+    quantity: item.quantity,
+    title: item.title,
+    price: item.price,
+  }));
+
+  const response = await fetch(
+    `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders.json`,
+    {
+      method: 'POST',
+      headers: {
+        'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        draft_order: {
+          email: orderData.email,
+          tags: [
+            'OPC-Draft',
+            `draft_key:${orderData.draftKey}`,
+            orderData.cartId ? `checkout_session:${orderData.cartId}` : '',
+            orderData.cid ? `cid:${orderData.cid}` : '',
+          ].filter(Boolean).join(', '),
+          note_attributes: [
+            { name: 'draft_key', value: orderData.draftKey },
+            { name: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
+            { name: 'cid', value: orderData.cid || '' },
+            { name: 'source_url', value: orderData.sourceUrl || '' },
+          ].filter((attribute) => attribute.value),
+          line_items: lineItemsPayload,
+          shipping_address: {
+            first_name: firstName,
+            last_name: lastName,
+            address1: orderData.shippingAddress.address1,
+            address2: orderData.shippingAddress.address2 || '',
+            city: orderData.shippingAddress.city,
+            province: orderData.shippingAddress.province || '',
+            zip: orderData.shippingAddress.zip,
+            country: orderData.shippingAddress.country,
+            phone: orderData.shippingAddress.phone || '',
+          },
+          customer: {
+            first_name: firstName,
+            last_name: lastName,
+            email: orderData.email,
+          },
+          use_customer_default_address: false,
+        },
+      }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.error('Shopify draft order creation error:', error);
+    throw new Error(`Shopify Draft Order API error: ${response.status}`);
+  }
+
+  const { draft_order } = await response.json();
+  return {
+    id: String(draft_order.id),
+    invoice_url: draft_order.invoice_url,
+  };
+}
+
+export async function completeShopifyDraftOrder(input: {
+  draftOrderId: string;
+}): Promise<{ id: string; order_number: number }> {
+  const response = await fetch(
+    `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders/${input.draftOrderId}/complete.json`,
+    {
+      method: 'PUT',
+      headers: {
+        'X-Shopify-Access-Token': ADMIN_TOKEN || '',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ payment_pending: false }),
+    }
+  );
+
+  if (!response.ok) {
+    const error = await response.json();
+    console.error('Shopify draft order completion error:', error);
+    throw new Error(`Shopify Draft Order complete error: ${response.status}`);
+  }
+
+  const { draft_order } = await response.json();
+  return {
+    id: String(draft_order.order_id || draft_order.id),
+    order_number: draft_order.order_number || 0,
+  };
 }
 
 /**

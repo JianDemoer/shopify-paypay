@@ -1,13 +1,18 @@
 import { ensureCheckoutSession } from '@/lib/checkout-sessions';
 import { verifyAppProxySearchParams } from '@/lib/shopify-app-proxy';
-import { OmniCheckout } from './ui';
+import { UpsellCheckout } from './ui';
 
 interface PageProps {
   params: { sessionId: string };
-  searchParams?: { cid?: string; step?: string };
+  searchParams?: {
+    cid?: string;
+    payment_intent?: string;
+    payment_intent_client_secret?: string;
+    redirect_status?: string;
+  };
 }
 
-export default async function AppProxyCheckoutEntry({ params, searchParams }: PageProps) {
+export default async function AppProxyUpsellPage({ params, searchParams }: PageProps) {
   if (!verifyAppProxySearchParams(searchParams || {})) {
     return <div>Invalid checkout signature.</div>;
   }
@@ -15,10 +20,10 @@ export default async function AppProxyCheckoutEntry({ params, searchParams }: Pa
   const session = await ensureCheckoutSession(params.sessionId, searchParams?.cid || '');
 
   return (
-    <OmniCheckout
-      initialSession={session}
-      initialStep={searchParams?.step || 'contact'}
+    <UpsellCheckout
+      session={session}
       cid={searchParams?.cid || session.cid}
+      parentPaymentIntentId={searchParams?.payment_intent || ''}
     />
   );
 }

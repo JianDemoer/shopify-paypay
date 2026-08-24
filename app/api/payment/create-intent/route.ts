@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { createShopifyDraftOrder } from '@/lib/shopify-admin';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '');
 
@@ -22,6 +23,8 @@ export async function POST(request: NextRequest) {
       shippingMethod,
       sourceUrl,
       utm,
+      parentPaymentIntentId,
+      orderType,
     } = body;
 
     // Validation
@@ -30,6 +33,30 @@ export async function POST(request: NextRequest) {
         { error: 'Invalid amount' },
         { status: 400 }
       );
+    }
+
+    let draftOrderId = '';
+    let draftOrderInvoiceUrl = '';
+    const shouldCreateDraftOrder = process.env.SHOPIFY_ORDER_MODE === 'draft_order' && cartId;
+
+    if (shouldCreateDraftOrder) {
+      const draftOrder = await createShopifyDraftOrder({
+        email: email || shippingAddress?.email || 'noreply@draft-order.local',
+        firstName: shippingAddress?.firstName || 'Guest',
+        lastName: shippingAddress?.lastName || 'Customer',
+        lineItems: lineItems || [],
+        shippingAddress: shippingAddress || {},
+        cartId: cartId || checkoutSessionId || '',
+        checkoutSessionId: checkoutSessionId || cartId || '',
+        cid,
+        sourceUrl,
+        shippingMethod,
+        orderType: orderType || 'checkout',
+        utm: utm || {},
+        draftKey: `${cartId || checkoutSessionId}:${Date.now()}`,
+      });
+      draftOrderId = draftOrder.id;
+      draftOrderInvoiceUrl = draftOrder.invoice_url || '';
     }
 
     // Create Payment Intent with metadata for webhook
@@ -49,6 +76,9 @@ export async function POST(request: NextRequest) {
         cid: cid || '',
         sourceUrl: sourceUrl || '',
         shippingMethod: shippingMethod || '',
+        parentPaymentIntentId: parentPaymentIntentId || '',
+        orderType: orderType || 'checkout',
+        draftOrderId,
         utm: JSON.stringify(utm || {}),
         lineItems: JSON.stringify(lineItems || []),
         shippingAddress: JSON.stringify(shippingAddress || {}),
@@ -68,6 +98,8 @@ export async function POST(request: NextRequest) {
       paymentIntentId: paymentIntent.id,
       amount: paymentIntent.amount,
       currency: paymentIntent.currency,
+      draftOrderId,
+      draftOrderInvoiceUrl,
     });
   } catch (error) {
     console.error('Payment intent error:', error);

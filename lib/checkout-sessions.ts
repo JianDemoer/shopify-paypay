@@ -1,3 +1,6 @@
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import path from 'path';
+
 export interface CheckoutLineItem {
   id: string;
   variantId: string;
@@ -30,6 +33,12 @@ const globalForCheckout = globalThis as typeof globalThis & {
 
 const sessions = globalForCheckout.__checkoutSessions ?? new Map<string, CheckoutSession>();
 globalForCheckout.__checkoutSessions = sessions;
+
+const DATA_DIR = process.env.CHECKOUT_SESSION_DATA_DIR || path.join(process.cwd(), '.data');
+const FILE_STORE_PATH = path.join(DATA_DIR, 'checkout-sessions.json');
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const SESSION_TTL_SECONDS = 30 * 60;
 
 const DEFAULT_ITEM: CheckoutLineItem = {
   id: 'demo-pen-4-pack',
@@ -68,7 +77,57 @@ function normalizeItems(input: any): CheckoutLineItem[] {
   }));
 }
 
-export function createCheckoutSession(input: any): CheckoutSession {
+async function upstashCommand(command: unknown[]) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null;
+
+  const response = await fetch(UPSTASH_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${UPSTASH_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(command),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Upstash Redis error: ${response.status} ${await response.text()}`);
+  }
+
+  return response.json();
+}
+
+async function readFileStore() {
+  try {
+    const raw = await readFile(FILE_STORE_PATH, 'utf8');
+    const parsed = JSON.parse(raw) as Record<string, CheckoutSession>;
+    for (const [id, session] of Object.entries(parsed)) {
+      sessions.set(id, session);
+    }
+  } catch (error: any) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
+}
+
+async function writeFileStore() {
+  await mkdir(DATA_DIR, { recursive: true });
+  const activeSessions = Object.fromEntries(
+    [...sessions.entries()].filter(([, session]) => new Date(session.expiresAt).getTime() >= Date.now())
+  );
+  await writeFile(FILE_STORE_PATH, JSON.stringify(activeSessions, null, 2));
+}
+
+async function persistSession(session: CheckoutSession) {
+  sessions.set(session.id, session);
+
+  if (UPSTASH_URL && UPSTASH_TOKEN) {
+    await upstashCommand(['SET', `checkout_session:${session.id}`, JSON.stringify(session), 'EX', SESSION_TTL_SECONDS]);
+    return;
+  }
+
+  await writeFileStore();
+}
+
+export async function createCheckoutSession(input: any): Promise<CheckoutSession> {
   const items = normalizeItems(input);
   const subtotal = Number(items.reduce((sum, item) => sum + item.price * item.quantity, 0).toFixed(2));
   const shipping = Number((input?.shipping ?? 3.99).toFixed ? input.shipping.toFixed(2) : Number(input?.shipping ?? 3.99).toFixed(2));
@@ -91,20 +150,35 @@ export function createCheckoutSession(input: any): CheckoutSession {
     expiresAt: expiresAt.toISOString(),
   };
 
-  sessions.set(session.id, session);
+  await persistSession(session);
   return session;
 }
 
-export function getCheckoutSession(id: string): CheckoutSession | null {
+export async function getCheckoutSession(id: string): Promise<CheckoutSession | null> {
+  if (UPSTASH_URL && UPSTASH_TOKEN) {
+    const response = await upstashCommand(['GET', `checkout_session:${id}`]);
+    const raw = response?.result;
+    if (!raw) return null;
+    const session = JSON.parse(raw) as CheckoutSession;
+    if (new Date(session.expiresAt).getTime() < Date.now()) return null;
+    sessions.set(session.id, session);
+    return session;
+  }
+
+  if (!sessions.has(id)) {
+    await readFileStore();
+  }
+
   const session = sessions.get(id);
   if (!session) return null;
   if (new Date(session.expiresAt).getTime() < Date.now()) {
     sessions.delete(id);
+    await writeFileStore();
     return null;
   }
   return session;
 }
 
-export function ensureCheckoutSession(id: string, cid = ''): CheckoutSession {
-  return getCheckoutSession(id) ?? createCheckoutSession({ cid });
+export async function ensureCheckoutSession(id: string, cid = ''): Promise<CheckoutSession> {
+  return await getCheckoutSession(id) ?? await createCheckoutSession({ cid });
 }

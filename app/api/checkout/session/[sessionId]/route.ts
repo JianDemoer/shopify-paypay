@@ -5,7 +5,7 @@ export async function GET(
   _request: Request,
   { params }: { params: { sessionId: string } }
 ) {
-  const session = getCheckoutSession(params.sessionId);
+  const session = await getCheckoutSession(params.sessionId);
   if (!session) {
     return NextResponse.json({ error: 'Checkout session not found' }, { status: 404 });
   }
