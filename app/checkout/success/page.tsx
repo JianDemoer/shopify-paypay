@@ -16,6 +16,7 @@ function SuccessPageContent() {
 
   // Extract payment intent ID from URL (Stripe redirects here)
   const paymentIntentId = searchParams.get('payment_intent');
+  const checkoutSessionId = searchParams.get('checkout_session_id');
 
   // Get Shopify store domain for admin link
   const shopifyStoreDomain = process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN || '';
@@ -24,9 +25,6 @@ function SuccessPageContent() {
   // Uses recursive polling with retry logic (up to 10 attempts, 2-second intervals)
   useEffect(() => {
     setMounted(true);
-
-    console.log("Current Order State:", order);
-console.log("Domain Var:", process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN);
 
     let timer: NodeJS.Timeout;
     let attempts = 0;
@@ -40,7 +38,10 @@ console.log("Domain Var:", process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN);
       }
 
       try {
-        const response = await fetch(`/api/payment/order-number?payment_intent=${paymentIntentId}`);
+        const params = new URLSearchParams();
+        if (paymentIntentId) params.set('payment_intent', paymentIntentId);
+        if (checkoutSessionId) params.set('checkout_session_id', checkoutSessionId);
+        const response = await fetch(`/api/payment/order-number?${params.toString()}`);
         if (response.ok) {
           const data = await response.json();
           setOrder({
@@ -63,14 +64,14 @@ console.log("Domain Var:", process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN);
       }
     };
 
-    if (paymentIntentId) {
+    if (paymentIntentId || checkoutSessionId) {
       pollOrder();
     } else {
       setLoading(false);
     }
 
     return () => clearTimeout(timer);
-  }, [paymentIntentId]);
+  }, [checkoutSessionId, paymentIntentId]);
 
   // Clear cart only after order is confirmed (order object populated)
   // This ensures items don't disappear if payment fails mid-checkout
@@ -97,9 +98,7 @@ console.log("Domain Var:", process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN);
         </div>
 
         {/* Title */}
-        <h1 className={styles.successTitle}>
-          Order Confirmed! 🎉
-        </h1>
+        <h1 className={styles.successTitle}>Order Confirmed</h1>
 
         {/* Subtitle */}
         <p className={styles.successSubtitle}>
@@ -125,7 +124,7 @@ console.log("Domain Var:", process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN);
         {/* Developer Demo Link: View in Shopify Admin */}
         {order && shopifyStoreDomain && (
           <div className={styles.devPortalBox}>
-            <p className={styles.devPortalLabel}>🧪 Developer Demo</p>
+            <p className={styles.devPortalLabel}>Developer Demo</p>
             <a
               href={`https://admin.shopify.com/store/${shopifyStoreDomain.split('.')[0]}/orders/${order.shopifyOrderId}`}
               target="_blank"
@@ -147,7 +146,7 @@ console.log("Domain Var:", process.env.NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN);
             </div>
           </div>
           <div className={styles.detailRow}>
-            <span className={styles.detailEmoji}>📧</span>
+            <span className={styles.detailEmoji}>Email</span>
             <div className={styles.detailContent}>
               <p className={styles.detailLabel}>Next Step</p>
               <p className={styles.detailValue}>

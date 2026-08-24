@@ -12,20 +12,18 @@ import { NextResponse } from 'next/server';
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    // CRITICAL: Stripe sends 'payment_intent' (snake_case), not 'paymentIntentId' (camelCase)
     const paymentIntentId = searchParams.get('payment_intent');
+    const checkoutSessionId = searchParams.get('checkout_session_id');
 
-    if (!paymentIntentId) {
+    if (!paymentIntentId && !checkoutSessionId) {
       return NextResponse.json(
-        { error: 'Missing payment_intent parameter' },
+        { error: 'Missing payment_intent or checkout_session_id parameter' },
         { status: 400 }
       );
     }
 
-    // Query Shopify for an order tagged with this payment intent ID
-    // The webhook already tagged it during order creation
     const shopifyResponse = await fetch(
-      `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2024-01/orders.json?status=any&tag=${paymentIntentId}`,
+      `https://${process.env.SHOPIFY_STORE_DOMAIN}/admin/api/2024-01/orders.json?status=any&limit=250&fields=id,order_number,tags`,
       {
         method: 'GET',
         headers: {
@@ -48,7 +46,16 @@ export async function GET(req: Request) {
     }
 
     const data = await shopifyResponse.json();
-    const order = data.orders?.[0];
+    const expectedTags = [
+      paymentIntentId ? `payment_intent:${paymentIntentId}` : '',
+      checkoutSessionId ? `checkout_session:${checkoutSessionId}` : '',
+      checkoutSessionId ? `checkout_session:${checkoutSessionId}:upsell` : '',
+    ].filter(Boolean);
+
+    const order = data.orders?.find((candidate: any) => {
+      const tags = String(candidate.tags || '');
+      return expectedTags.some((tag) => tags.includes(tag));
+    });
 
     if (!order) {
       // Order not found yet (webhook still processing)
@@ -61,7 +68,7 @@ export async function GET(req: Request) {
 
     // Success! Return the order number for the frontend
     // Example response: { orderNumber: 1017 }
-    console.log(`✅ Found order #${order.order_number} for payment intent ${paymentIntentId}`);
+    console.log(`✅ Found order #${order.order_number}`);
 
     return NextResponse.json(
       {
