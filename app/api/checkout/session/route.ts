@@ -4,6 +4,11 @@ import { getStoreConfig } from '@/lib/store-configs';
 
 export async function POST(request: NextRequest) {
   try {
+    const adminToken = process.env.ADMIN_CONFIG_TOKEN;
+    if (adminToken && request.headers.get('x-admin-token') !== adminToken) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const storeConfig = await getStoreConfig(body.storeId || body.shopDomain || body.shop);
     const session = await createCheckoutSession({

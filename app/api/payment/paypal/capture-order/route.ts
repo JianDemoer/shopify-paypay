@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { capturePayPalOrder } from '@/lib/paypal';
 import { createShopifyOrder } from '@/lib/shopify-admin';
 import { getStoreConfig } from '@/lib/store-configs';
+import { getCheckoutSession } from '@/lib/checkout-sessions';
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,23 +10,19 @@ export async function POST(request: NextRequest) {
     const {
       orderId,
       checkoutSessionId,
-      storeId,
-      shopDomain,
       cid,
-      amount,
-      currency = 'USD',
-      lineItems,
       shippingAddress,
       sourceUrl,
       shippingMethod,
       utm,
     } = body;
 
-    if (!orderId || !checkoutSessionId || !amount) {
+    const session = checkoutSessionId ? await getCheckoutSession(checkoutSessionId) : null;
+    if (!orderId || !session) {
       return NextResponse.json({ error: 'Invalid PayPal capture input' }, { status: 400 });
     }
 
-    const storeConfig = await getStoreConfig(storeId || shopDomain);
+    const storeConfig = await getStoreConfig(session.storeId || session.shopDomain);
     const capture = await capturePayPalOrder(storeConfig, orderId);
     const payer = capture?.payer || {};
     const captureId = capture?.purchase_units?.[0]?.payments?.captures?.[0]?.id || orderId;
@@ -38,11 +35,17 @@ export async function POST(request: NextRequest) {
       email,
       firstName,
       lastName,
-      lineItems: lineItems || [],
+      lineItems: session.items.map((item) => ({
+        productId: item.productId,
+        variantId: item.variantId,
+        quantity: item.quantity,
+        title: item.title,
+        price: item.price,
+      })),
       shippingAddress,
       paymentIntentId: `paypal:${captureId}`,
-      cartId: checkoutSessionId,
-      checkoutSessionId,
+      cartId: session.id,
+      checkoutSessionId: session.id,
       cid,
       sourceUrl,
       shippingMethod,

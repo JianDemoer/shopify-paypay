@@ -1,4 +1,4 @@
-import { ensureCheckoutSession } from '@/lib/checkout-sessions';
+import { getCheckoutSession } from '@/lib/checkout-sessions';
 import { verifyAppProxySearchParams } from '@/lib/shopify-app-proxy';
 import { getStoreConfig, publicStoreConfig } from '@/lib/store-configs';
 import { UpsellCheckout } from './ui';
@@ -14,7 +14,10 @@ interface PageProps {
 }
 
 export default async function AppProxyUpsellPage({ params, searchParams }: PageProps) {
-  const session = await ensureCheckoutSession(params.sessionId, searchParams?.cid || '');
+  const session = await getCheckoutSession(params.sessionId);
+  if (!session) {
+    return <div>Checkout session not found or expired.</div>;
+  }
   const fullStoreConfig = await getStoreConfig(session.storeId || session.shopDomain);
 
   if (!verifyAppProxySearchParams(searchParams || {}, fullStoreConfig.shopifyAppProxySecret)) {

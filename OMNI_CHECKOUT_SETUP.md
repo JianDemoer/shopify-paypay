@@ -35,6 +35,7 @@ Create a checkout session:
 
 ```bash
 curl -X POST http://127.0.0.1:3000/api/checkout/session \
+  -H 'x-admin-token: change_this_token' \
   -H 'Content-Type: application/json' \
   -d '{
     "productId": "gid://shopify/Product/1",
@@ -107,6 +108,10 @@ cross-origin browser requests. When a store has a Shopify App Proxy secret
 configured in `/admin/stores`, this route verifies Shopify's App Proxy
 signature before creating the checkout session.
 
+The internal `/api/checkout/session` route is intended for admin/dev tooling.
+When `ADMIN_CONFIG_TOKEN` is set, direct calls to this route must include
+`x-admin-token`.
+
 ## Shopify App Proxy
 
 For production inside a Shopify store domain, configure App Proxy:
@@ -132,6 +137,10 @@ do not pass through this app's API.
 PayPal payments use the PayPal JS SDK in the browser and server-side capture
 through `/api/payment/paypal/capture-order`. The app receives PayPal order and
 capture IDs, not buyer card or funding-source credentials.
+
+Payment amounts and line items are recalculated from the server-side checkout
+session. The payment APIs do not trust buyer-controlled `amount` or `lineItems`
+values from the browser.
 
 The custom checkout passes only order metadata to Stripe:
 
