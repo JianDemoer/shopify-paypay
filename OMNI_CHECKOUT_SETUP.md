@@ -103,7 +103,9 @@ The script creates sessions through the App Proxy API route:
 ```
 
 This keeps the product-page request on the Shopify store domain and avoids
-cross-origin browser requests.
+cross-origin browser requests. When a store has a Shopify App Proxy secret
+configured in `/admin/stores`, this route verifies Shopify's App Proxy
+signature before creating the checkout session.
 
 ## Shopify App Proxy
 
@@ -186,6 +188,10 @@ After payment succeeds:
    `cid:...`.
 4. The order note attributes include UTM, source URL, checkout session, and
    shipping method for backend attribution and reporting.
+
+For multi-store setups, the Shopify store used for order creation is the store
+whose Stripe webhook secret verifies the event. PaymentIntent metadata is not
+allowed to switch the order into another store.
 
 ## PayPal Flow
 

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { completeShopifyDraftOrder, createShopifyOrder } from '@/lib/shopify-admin';
-import { getStoreConfig, listStoreConfigs, type StoreConfig } from '@/lib/store-configs';
+import { listStoreConfigs, type StoreConfig } from '@/lib/store-configs';
 
 async function verifyStripeEvent(body: string, signature: string) {
   const configs = await listStoreConfigs();
@@ -177,8 +177,6 @@ export async function POST(request: NextRequest) {
         shippingAddress,
         cartId,
         checkoutSessionId,
-        storeId,
-        shopDomain,
         cid,
         sourceUrl,
         shippingMethod,
@@ -208,8 +206,7 @@ export async function POST(request: NextRequest) {
       // Still fast (~50ms for Shopify API call)
       
       try {
-        const storeConfig = await getStoreConfig(storeId || shopDomain || verifiedStoreConfig.id);
-        await processOrderAsync(paymentIntent, email, firstName, lastName, lineItems, shippingAddress, cartId, storeConfig, {
+        await processOrderAsync(paymentIntent, email, firstName, lastName, lineItems, shippingAddress, cartId, verifiedStoreConfig, {
           checkoutSessionId,
           cid,
           sourceUrl,
