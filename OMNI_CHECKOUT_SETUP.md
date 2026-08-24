@@ -96,6 +96,15 @@ and redirects the buyer to:
 /a/s/checkout/:sessionId/entry?cid=:clientId
 ```
 
+The script creates sessions through the App Proxy API route:
+
+```text
+/a/s/api/checkout/session
+```
+
+This keeps the product-page request on the Shopify store domain and avoids
+cross-origin browser requests.
+
 ## Shopify App Proxy
 
 For production inside a Shopify store domain, configure App Proxy:

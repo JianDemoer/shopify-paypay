@@ -2,7 +2,7 @@
   "use strict";
 
   var appProxyPrefix = "/a/s";
-  var apiBase = "";
+  var apiBase = appProxyPrefix;
 
   function cid() {
     if (window.crypto && window.crypto.randomUUID) return window.crypto.randomUUID();
@@ -131,7 +131,7 @@
   }
 
   window.opc_app_proxy_prefix = appProxyPrefix;
-  window.opc_checkout_api_url = apiBase || window.location.origin;
+  window.opc_checkout_api_url = apiBase;
   window.itcProdPageCheckout = startCheckout;
 
   if (document.readyState === "loading") {
