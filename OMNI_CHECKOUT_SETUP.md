@@ -108,6 +108,9 @@ cross-origin browser requests. When a store has a Shopify App Proxy secret
 configured in `/admin/stores`, this route verifies Shopify's App Proxy
 signature before creating the checkout session.
 
+In production, App Proxy routes require a configured Shopify App Proxy secret.
+Missing secrets are allowed only during local development.
+
 The internal `/api/checkout/session` route is intended for admin/dev tooling.
 When `ADMIN_CONFIG_TOKEN` is set, direct calls to this route must include
 `x-admin-token`.

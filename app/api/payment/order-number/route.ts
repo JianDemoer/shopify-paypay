@@ -28,40 +28,38 @@ export async function GET(req: Request) {
     const session = checkoutSessionId ? await getCheckoutSession(checkoutSessionId) : null;
     const storeConfig = await getStoreConfig(session?.storeId || session?.shopDomain || shopDomain);
 
-    const shopifyResponse = await fetch(
-      `https://${storeConfig.shopDomain}/admin/api/2024-01/orders.json?status=any&limit=250&fields=id,order_number,tags`,
-      {
-        method: 'GET',
-        headers: {
-          'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-        // Critical: Don't cache the response
-        // If we cache a 404, the frontend's polling loop will keep seeing 404
-        // even after the order is created
-        cache: 'no-store',
-      }
-    );
-
-    if (!shopifyResponse.ok) {
-      console.error(`Shopify API error: ${shopifyResponse.status}`);
-      return NextResponse.json(
-        { error: 'Failed to query Shopify' },
-        { status: 500 }
-      );
-    }
-
-    const data = await shopifyResponse.json();
-    const expectedTags = [
+    const tagQueries = [
       paymentIntentId ? `payment_intent:${paymentIntentId}` : '',
       checkoutSessionId ? `checkout_session:${checkoutSessionId}` : '',
       checkoutSessionId ? `checkout_session:${checkoutSessionId}:upsell` : '',
     ].filter(Boolean);
 
-    const order = data.orders?.find((candidate: any) => {
-      const tags = String(candidate.tags || '');
-      return expectedTags.some((tag) => tags.includes(tag));
-    });
+    let order: any = null;
+    for (const tag of tagQueries) {
+      const shopifyResponse = await fetch(
+        `https://${storeConfig.shopDomain}/admin/api/2024-01/orders.json?status=any&tag=${encodeURIComponent(tag)}&fields=id,order_number,tags`,
+        {
+          method: 'GET',
+          headers: {
+            'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
+            'Content-Type': 'application/json',
+          },
+          cache: 'no-store',
+        }
+      );
+
+      if (!shopifyResponse.ok) {
+        console.error(`Shopify API error: ${shopifyResponse.status}`);
+        return NextResponse.json(
+          { error: 'Failed to query Shopify' },
+          { status: 500 }
+        );
+      }
+
+      const data = await shopifyResponse.json();
+      order = data.orders?.[0];
+      if (order) break;
+    }
 
     if (!order) {
       // Order not found yet (webhook still processing)

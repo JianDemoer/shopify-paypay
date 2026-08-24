@@ -4,7 +4,7 @@ export function verifyAppProxySearchParams(
   searchParams: Record<string, string | string[] | undefined>,
   secret = process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET || ''
 ) {
-  if (!secret) return true;
+  if (!secret) return process.env.NODE_ENV !== 'production';
 
   const signature = stringValue(searchParams.signature);
   if (!signature) return false;
