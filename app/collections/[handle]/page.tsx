@@ -7,11 +7,12 @@ import { ProductCard } from '@/components/ProductCard';
 import styles from './page.module.css';
 
 type Props = {
-  params: { handle: string };
+  params: Promise<{ handle: string }>;
 };
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const collection = await getCollection(params.handle);
+  const { handle } = await params;
+  const collection = await getCollection(handle);
 
   if (!collection) {
     return {
@@ -46,7 +47,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function CollectionPage({ params }: Props) {
-  const collection = await getCollection(params.handle);
+  const { handle } = await params;
+  const collection = await getCollection(handle);
 
   if (!collection) {
     notFound();

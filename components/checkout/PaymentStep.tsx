@@ -1,10 +1,16 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState, useSyncExternalStore } from 'react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import styles from './CheckoutComponents.module.css';
+
+const subscribeToNothing = () => () => {};
+
+function useClientReady() {
+  return useSyncExternalStore(subscribeToNothing, () => true, () => false);
+}
 
 interface PaymentStepProps {
   clientSecret: string | null;
@@ -126,17 +132,13 @@ function PaymentForm({
 }
 
 export function PaymentStep(props: PaymentStepProps) {
-  const [mounted, setMounted] = useState(false);
+  const clientReady = useClientReady();
   const stripePromise = useMemo(
     () => loadStripe(props.publishableKey || process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''),
     [props.publishableKey]
   );
 
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  if (!mounted) {
+  if (!clientReady) {
     return (
       <div className={styles.paymentLoadingPlaceholder} style={{ height: '20rem' }} />
     );

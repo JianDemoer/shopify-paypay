@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { loadStripe, Stripe as StripeType } from '@stripe/stripe-js';
+import { useMemo, useState } from 'react';
+import { loadStripe } from '@stripe/stripe-js';
 import {
   Elements,
   CardElement,
@@ -9,6 +9,7 @@ import {
   useElements,
 } from '@stripe/react-stripe-js';
 import { AlertCircle, Loader, CheckCircle } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import styles from './CheckoutForm.module.css';
 
 interface CheckoutFormProps {
@@ -24,6 +25,7 @@ function CheckoutFormInner({
   onSuccess,
   onError,
 }: CheckoutFormProps) {
+  const router = useRouter();
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -83,7 +85,7 @@ function CheckoutFormInner({
         onSuccess?.(paymentIntentId);
         // Optionally redirect after success
         setTimeout(() => {
-          window.location.href = '/checkout/success';
+          router.push('/checkout/success');
         }, 2000);
       } else {
         setError('Payment processing failed. Please try again.');
@@ -186,17 +188,12 @@ export function CheckoutForm({
   onSuccess,
   onError,
 }: CheckoutFormProps) {
-  const [stripePromise, setStripePromise] = useState<Promise<StripeType | null>>(
-    Promise.resolve(null)
-  );
-
-  useEffect(() => {
+  const stripePromise = useMemo(() => {
     const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
     if (!publishableKey) {
-      console.error('NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY is not set');
-      return;
+      return null;
     }
-    setStripePromise(loadStripe(publishableKey));
+    return loadStripe(publishableKey);
   }, []);
 
   return (

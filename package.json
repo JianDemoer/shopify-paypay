@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "engines": {
-    "node": ">=18.17.0"
+    "node": ">=20.9.0"
   },
   "browserslist": [
     "last 1 Chrome version",
@@ -16,7 +16,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint .",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
@@ -40,7 +40,7 @@
     "graphql": "^16.8.1",
     "graphql-request": "^6.1.0",
     "lucide-react": "^0.344.0",
-    "next": "^14.2.0",
+    "next": "16.3.2",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "stripe": "^14.0.0"
@@ -55,13 +55,16 @@
     "@types/node": "^20",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "eslint": "^8",
-    "eslint-config-next": "14.2.0",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.2",
+    "husky": "^8.0.0",
     "identity-obj-proxy": "^3.0.0",
     "jest": "^30.2.0",
     "jest-environment-jsdom": "^30.2.0",
     "start-server-and-test": "^2.1.2",
-    "typescript": "^5",
-    "husky": "^8.0.0"
+    "typescript": "^5"
+  },
+  "overrides": {
+    "qs": "6.15.3"
   }
 }

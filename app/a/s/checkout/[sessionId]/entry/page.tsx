@@ -7,20 +7,21 @@ export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 interface PageProps {
-  params: { sessionId: string };
-  searchParams?: { cid?: string; step?: string; checkout_token?: string };
+  params: Promise<{ sessionId: string }>;
+  searchParams?: Promise<{ cid?: string; step?: string; checkout_token?: string }>;
 }
 
 export default async function AppProxyCheckoutEntry({ params, searchParams }: PageProps) {
-  const session = await getCheckoutSession(params.sessionId);
+  const [{ sessionId }, query] = await Promise.all([params, searchParams]);
+  const session = await getCheckoutSession(sessionId);
   if (!session) {
     return <div>Checkout session not found or expired.</div>;
   }
   const fullStoreConfig = await getStoreConfig(session.storeId || session.shopDomain);
 
   const access = verifyCheckoutAccessToken(
-    searchParams?.checkout_token,
-    params.sessionId,
+    query?.checkout_token,
+    sessionId,
     fullStoreConfig.shopifyAppProxySecret
   );
   if (!access) {
@@ -33,9 +34,9 @@ export default async function AppProxyCheckoutEntry({ params, searchParams }: Pa
     <OmniCheckout
       initialSession={session}
       storeConfig={storeConfig}
-      initialStep={searchParams?.step || 'contact'}
+      initialStep={query?.step || 'contact'}
       cid={session.cid}
-      checkoutToken={searchParams?.checkout_token || ''}
+      checkoutToken={query?.checkout_token || ''}
     />
   );
 }

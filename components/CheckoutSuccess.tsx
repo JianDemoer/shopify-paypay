@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useCart } from '@/contexts/CartContext';
 import Link from 'next/link';
@@ -8,6 +8,11 @@ import { CheckCircle2, Home, ShoppingBag } from 'lucide-react';
 import styles from '@/app/checkout/success/SuccessPage.module.css';
 
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com';
+const subscribeToNothing = () => () => {};
+
+function useClientReady() {
+  return useSyncExternalStore(subscribeToNothing, () => true, () => false);
+}
 
 export function CheckoutSuccess({
   orderLookupPath = '/api/payment/order-number',
@@ -15,14 +20,14 @@ export function CheckoutSuccess({
 }: { orderLookupPath?: string; checkoutToken?: string }) {
   const searchParams = useSearchParams();
   const { clearCart } = useCart();
-  const [mounted, setMounted] = useState(false);
+  const clientReady = useClientReady();
   const [order, setOrder] = useState<{ orderNumber: number; shopifyOrderId: string; shopDomain?: string } | null>(null);
-  const [loading, setLoading] = useState(true);
   const paymentIntentId = searchParams.get('payment_intent');
   const checkoutSessionId = searchParams.get('checkout_session_id');
+  const shouldPollOrder = Boolean(paymentIntentId || checkoutSessionId);
+  const [loading, setLoading] = useState(shouldPollOrder);
 
   useEffect(() => {
-    setMounted(true);
     let timer: NodeJS.Timeout;
     let attempts = 0;
     const maxAttempts = 10;
@@ -51,16 +56,15 @@ export function CheckoutSuccess({
         setLoading(false);
       }
     };
-    if (paymentIntentId || checkoutSessionId) pollOrder();
-    else setLoading(false);
+    if (shouldPollOrder) pollOrder();
     return () => clearTimeout(timer);
-  }, [checkoutSessionId, checkoutToken, orderLookupPath, paymentIntentId]);
+  }, [checkoutSessionId, checkoutToken, orderLookupPath, paymentIntentId, shouldPollOrder]);
 
   useEffect(() => {
     if (order) clearCart();
   }, [clearCart, order]);
 
-  if (!mounted) return null;
+  if (!clientReady) return null;
   return (
     <div className={styles.successContainer}>
       <div className={styles.successCard}>

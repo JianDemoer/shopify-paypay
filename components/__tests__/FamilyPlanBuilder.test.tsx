@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import FamilyPlanBuilder from '../FamilyPlanBuilder';
 
 // Mock lucide-react icons
@@ -138,8 +138,8 @@ describe('FamilyPlanBuilder', () => {
       expect(button).not.toBeDisabled();
     });
 
-    it('calls onAddToCart callback when clicked', () => {
-      const mockOnAddToCart = jest.fn();
+    it('calls onAddToCart callback when clicked', async () => {
+      const mockOnAddToCart = jest.fn().mockResolvedValue(undefined);
       render(<FamilyPlanBuilder onAddToCart={mockOnAddToCart} />);
       
       // Add one line to reach minimum
@@ -149,7 +149,8 @@ describe('FamilyPlanBuilder', () => {
       const button = screen.getByRole('button', { name: /Add to Cart/i });
       fireEvent.click(button);
       
-      expect(mockOnAddToCart).toHaveBeenCalled();
+      await waitFor(() => expect(mockOnAddToCart).toHaveBeenCalled());
+      await waitFor(() => expect(button).not.toBeDisabled());
     });
   });
 

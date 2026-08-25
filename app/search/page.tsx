@@ -6,11 +6,12 @@ import styles from './search.module.css';
 import type { Metadata } from 'next';
 
 interface SearchPageProps {
-  searchParams: { q?: string };
+  searchParams: Promise<{ q?: string }>;
 }
 
-export function generateMetadata({ searchParams }: SearchPageProps): Metadata {
-  const query = searchParams.q || '';
+export async function generateMetadata({ searchParams }: SearchPageProps): Promise<Metadata> {
+  const { q } = await searchParams;
+  const query = q || '';
   
   if (!query) {
     return {
@@ -34,7 +35,8 @@ export function generateMetadata({ searchParams }: SearchPageProps): Metadata {
 }
 
 export default async function SearchPage({ searchParams }: SearchPageProps) {
-  const query: string = searchParams.q || '';
+  const { q } = await searchParams;
+  const query = q || '';
   
   let products: ShopifyProduct[] = [];
   let error: string | null = null;

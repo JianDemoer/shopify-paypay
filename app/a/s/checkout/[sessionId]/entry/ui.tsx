@@ -62,6 +62,10 @@ function loadScript(id: string, src: string) {
   document.head.appendChild(script);
 }
 
+function navigate(path: string) {
+  window.location.assign(new URL(path, window.location.origin).toString());
+}
+
 export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, checkoutToken }: OmniCheckoutProps) {
   const [step, setStepState] = useState<Step>(asStep(initialStep));
   const [session] = useState(initialSession);
@@ -205,7 +209,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, ch
           });
           if (!response.ok) throw new Error('Unable to capture PayPal payment.');
           const capture = await response.json();
-          window.location.href = `/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}&parent_payment_intent=${encodeURIComponent(capture.paymentId)}&checkout_token=${encodeURIComponent(checkoutToken)}`;
+          navigate(`/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}&parent_payment_intent=${encodeURIComponent(capture.paymentId)}&checkout_token=${encodeURIComponent(checkoutToken)}`);
         },
         onError: (err: Error) => {
           setPaypalLoading(false);
@@ -288,7 +292,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, ch
               <FloatingInput label="Phone (For shipping updates)" value={contact.phone} onChange={(value) => updateContact('phone', value)} />
 
               <div className={styles.actionRow}>
-                <button className={styles.backButton} type="button" onClick={() => { window.location.href = '/cart'; }}>‹ Return to cart</button>
+                <button className={styles.backButton} type="button" onClick={() => navigate('/cart')}>‹ Return to cart</button>
                 <button className={styles.primaryButton} type="button" onClick={() => contactIsValid() ? setStep('shipping_method') : setError('Please complete contact and shipping address.')}>Continue to shipping</button>
               </div>
             </section>

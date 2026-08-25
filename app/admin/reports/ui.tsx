@@ -48,7 +48,10 @@ export function ReportsAdmin({ adminTokenRequired }: { adminTokenRequired: boole
     }
   }, [storeId, t.error, token]);
 
-  useEffect(() => { loadReport().catch(() => undefined); }, [loadReport]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadReport(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadReport]);
 
   return (
     <main className={styles.page} lang={locale === 'zh' ? 'zh-CN' : 'en'}>

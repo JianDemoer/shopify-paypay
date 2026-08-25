@@ -67,6 +67,10 @@
     );
   }
 
+  function navigate(path) {
+    window.location.assign(new URL(path, window.location.origin).toString());
+  }
+
   async function startCheckout(event) {
     if (event) {
       event.preventDefault();
@@ -80,7 +84,7 @@
     var variant = variantId(form);
 
     if (!variant) {
-      window.location.href = "/checkout";
+      navigate("/checkout");
       return;
     }
 
@@ -105,7 +109,7 @@
         currency: window.Shopify && window.Shopify.currency ? window.Shopify.currency.active : "USD",
         utm: utm()
       });
-      window.location.href = session.redirectUrl || (appProxyPrefix + "/checkout/" + encodeURIComponent(session.sessionId) + "/entry?cid=" + encodeURIComponent(session.cid || clientId));
+      navigate(session.redirectUrl || (appProxyPrefix + "/checkout/" + encodeURIComponent(session.sessionId) + "/entry?cid=" + encodeURIComponent(session.cid || clientId)));
     } catch (error) {
       if (button) {
         button.disabled = false;

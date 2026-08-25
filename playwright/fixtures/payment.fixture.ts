@@ -6,12 +6,12 @@ export const test = base.extend<{
   stripeClient: Stripe;
   mockPaymentIntentId: string;
 }>({
-  stripeClient: async ({}, use) => {
+  stripeClient: async ({}, provide) => {
     const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!);
-    await use(stripe);
+    await provide(stripe);
   },
 
-  mockPaymentIntentId: async ({ stripeClient }, use) => {
+  mockPaymentIntentId: async ({ stripeClient }, provide) => {
     // Create real Payment Intent for testing
     const intent = await stripeClient.paymentIntents.create({
       amount: 1000, // $10.00
@@ -19,7 +19,7 @@ export const test = base.extend<{
       automatic_payment_methods: { enabled: true },
       metadata: { test: 'true' }, // Metadata must be strings
     });
-    await use(intent.id);
+    await provide(intent.id);
     // Cleanup: cancel intent after test
     try {
       await stripeClient.paymentIntents.cancel(intent.id);

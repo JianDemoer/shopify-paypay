@@ -24,7 +24,7 @@ const nextConfig = {
     deviceSizes: [640, 750, 828, 1080, 1200, 1920, 2048, 3840],
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
   },
-  // Shopify App Proxy serves this app under /a/s. Next 14 can miss dynamic App
+  // Shopify App Proxy serves this app under /a/s. App Router can miss dynamic
   // Router pages nested under the same pathname as assetPrefix, so rewrites
   // below map those requests to protected /checkout/[sessionId] aliases.
   assetPrefix: process.env.NODE_ENV === 'production'
@@ -32,28 +32,12 @@ const nextConfig = {
     : undefined,
   // Performance optimizations
   reactStrictMode: true,
-  swcMinify: true,
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production',
   },
   experimental: {
     optimizePackageImports: ['lucide-react', 'framer-motion'],
     optimizeCss: true,
-  },
-  // Optimize dev server
-  webpack: (config, { dev, isServer }) => {
-    if (dev && !isServer) {
-      // Enable Fast Refresh
-      config.watchOptions = {
-        poll: 1000,
-        aggregateTimeout: 300,
-      }
-    }
-    
-    // Let Next.js 14 handle chunking - it has better Persistent Caching strategy
-    // than manual splitChunks for modern browsers
-    
-    return config
   },
   async rewrites() {
     return [

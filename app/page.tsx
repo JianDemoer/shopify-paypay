@@ -1,20 +1,10 @@
 import Link from 'next/link';
-import dynamicImport from 'next/dynamic';
 import { getProducts, ShopifyConfigurationError } from '@/lib/shopify';
 import { isProductionRuntime } from '@/lib/runtime';
 import { ProductCard } from '@/components/ProductCard';
+import { HeroCarousel } from '@/components/HeroCarousel';
+import { FamilyPlanPromo } from '@/components/FamilyPlanPromo';
 import styles from './page.module.css';
-
-// Lazy load components - below the fold content
-const HeroCarousel = dynamicImport(() => import('@/components/HeroCarousel').then(mod => ({ default: mod.HeroCarousel })), {
-  ssr: false,  // ⚠️ SSR disabled - stateful carousel with auto-advance can't hydrate properly
-  loading: () => <div style={{ minHeight: '500px', background: '#f5f5f5' }} />,
-});
-
-const FamilyPlanPromo = dynamicImport(() => import('@/components/FamilyPlanPromo').then(mod => ({ default: mod.FamilyPlanPromo })), {
-  ssr: true,
-  loading: () => <div style={{ minHeight: '200px' }} />,
-});
 
 // Force dynamic rendering - don't prerender at build time
 export const dynamic = 'force-dynamic';

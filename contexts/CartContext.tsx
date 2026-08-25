@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useCallback, useEffect, startTransition, ReactNode } from 'react';
 
 export interface CartItem {
   id: string;
@@ -33,17 +33,25 @@ export function CartProvider({ children }: { children: ReactNode }) {
     // Only run on client side
     if (typeof window === 'undefined') return;
 
+    let savedItems: CartItem[] = [];
     try {
       const savedCart = localStorage.getItem('cart');
       if (savedCart) {
-        setItems(JSON.parse(savedCart));
+        const parsedCart: unknown = JSON.parse(savedCart);
+        if (Array.isArray(parsedCart)) {
+          savedItems = parsedCart as CartItem[];
+        }
       }
     } catch (error) {
       console.error('Error loading cart:', error);
     }
 
-    // Mark as hydrated after attempting to load
-    setIsHydrated(true);
+    // Local storage is an external data source. Marking this update as a
+    // transition preserves a responsive first paint while it is applied.
+    startTransition(() => {
+      setItems(savedItems);
+      setIsHydrated(true);
+    });
   }, []);
 
   // Save cart to localStorage whenever it changes (client-side only, after hydration)

@@ -7,9 +7,10 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  const session = await getCheckoutSession(params.sessionId);
+  const { sessionId } = await params;
+  const session = await getCheckoutSession(sessionId);
   if (!session) {
     return NextResponse.json({ error: 'Checkout session not found' }, { status: 404 });
   }

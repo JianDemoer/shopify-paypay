@@ -1,4 +1,5 @@
 import styles from './Footer.module.css';
+import Link from 'next/link';
 
 const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com';
 
@@ -18,10 +19,10 @@ export function Footer() {
             <h3 className={styles.heading}>Quick Links</h3>
             <ul className={styles.list}>
               <li className={styles.listItem}>
-                <a href="/products" className={styles.link}>Products</a>
+                <Link href="/products" className={styles.link}>Products</Link>
               </li>
               <li className={styles.listItem}>
-                <a href="/cart" className={styles.link}>Cart</a>
+                <Link href="/cart" className={styles.link}>Cart</Link>
               </li>
             </ul>
           </div>

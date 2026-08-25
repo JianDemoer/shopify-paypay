@@ -23,6 +23,10 @@
     return window.Shopify && (window.Shopify.shop || window.Shopify.shopOrigin) || window.location.hostname;
   }
 
+  function navigate(path) {
+    window.location.assign(new URL(path, window.location.origin).toString());
+  }
+
   function productVariant(form) {
     var input = form && form.querySelector('[name="id"]');
     return input ? String(input.value || "") : "";
@@ -62,7 +66,7 @@
     var form = button && button.closest("form") || document.querySelector('form[action*="/cart/add"]');
     var variant = productVariant(form);
     if (!variant) {
-      window.location.href = "/checkout";
+      navigate("/checkout");
       return;
     }
     var originalText = button && button.textContent;
@@ -79,7 +83,7 @@
       currency: window.Shopify && window.Shopify.currency ? window.Shopify.currency.active : "USD",
       utm: sourceParams()
     }).then(function (session) {
-      window.location.href = session.redirectUrl;
+      navigate(session.redirectUrl);
     }).catch(function (error) {
       if (button) {
         button.disabled = false;

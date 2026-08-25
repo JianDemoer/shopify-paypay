@@ -45,6 +45,10 @@ function loadPayPalScript(clientId: string, currency: string) {
   document.head.appendChild(script);
 }
 
+function navigate(path: string) {
+  window.location.assign(new URL(path, window.location.origin).toString());
+}
+
 export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, parentPaymentIntentId, checkoutToken }: UpsellCheckoutProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -81,7 +85,7 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
           });
           const json = await response.json().catch(() => ({}));
           if (!response.ok) throw new Error(json.error || 'Unable to capture PayPal add-on payment.');
-          window.location.href = returnUrl;
+          navigate(returnUrl);
         },
         onError: (paypalError: Error) => {
           setLoading(false);
@@ -117,7 +121,7 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
       const json = await response.json().catch(() => ({}));
       if (!response.ok && !json.requiresAction) throw new Error(json.error || 'Unable to load this offer.');
       if (json.status === 'succeeded') {
-        window.location.href = returnUrl;
+        navigate(returnUrl);
         return;
       }
       if (!json.clientSecret) throw new Error('Stripe did not return an authentication session.');
@@ -125,7 +129,7 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
       if (!stripe) throw new Error('Secure payment is unavailable.');
       const result = await stripe.confirmCardPayment(json.clientSecret, { return_url: `${window.location.origin}${returnUrl}` } as any);
       if (result.error) throw new Error(result.error.message || 'Offer payment failed.');
-      window.location.href = returnUrl;
+      navigate(returnUrl);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Offer payment failed.');
       setLoading(false);
@@ -144,9 +148,9 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
       const json = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(json.error || 'Unable to continue.');
       if (json.completed) {
-        window.location.href = `/a/s/checkout/${encodeURIComponent(session.id)}/success?checkout_session_id=${encodeURIComponent(session.id)}&payment_intent=${encodeURIComponent(parentPaymentIntentId)}&checkout_token=${encodeURIComponent(checkoutToken)}`;
+        navigate(`/a/s/checkout/${encodeURIComponent(session.id)}/success?checkout_session_id=${encodeURIComponent(session.id)}&payment_intent=${encodeURIComponent(parentPaymentIntentId)}&checkout_token=${encodeURIComponent(checkoutToken)}`);
       } else {
-        window.location.href = returnUrl;
+        navigate(returnUrl);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unable to continue.');

@@ -7,16 +7,18 @@ import type { AdminLocale } from './ui';
 
 export const dynamic = 'force-dynamic';
 
-function preferredLocale(): AdminLocale {
-  const saved = cookies().get('admin_locale')?.value;
+async function preferredLocale(): Promise<AdminLocale> {
+  const cookieStore = await cookies();
+  const saved = cookieStore.get('admin_locale')?.value;
   if (saved === 'zh' || saved === 'en') return saved;
-  return headers().get('accept-language')?.toLowerCase().includes('zh') ? 'zh' : 'en';
+  const requestHeaders = await headers();
+  return requestHeaders.get('accept-language')?.toLowerCase().includes('zh') ? 'zh' : 'en';
 }
 
-export default async function StoreAdminPage({ searchParams }: { searchParams?: { installed?: string; shop?: string } }) {
-  const initialLocale = preferredLocale();
-  const sessionShop = verifyAdminSession(cookies().get(ADMIN_SESSION_COOKIE)?.value);
-  const installedShop = searchParams?.installed === '1' ? searchParams.shop : undefined;
+export default async function StoreAdminPage({ searchParams }: { searchParams?: Promise<{ installed?: string; shop?: string }> }) {
+  const [initialLocale, cookieStore, query] = await Promise.all([preferredLocale(), cookies(), searchParams]);
+  const sessionShop = verifyAdminSession(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
+  const installedShop = query?.installed === '1' ? query.shop : undefined;
   if ((process.env.ADMIN_CONFIG_TOKEN || isProductionRuntime()) && !sessionShop) {
     return <StoreAdmin initialStores={[]} adminTokenRequired initialLocale={initialLocale} installedShop={installedShop} />;
   }

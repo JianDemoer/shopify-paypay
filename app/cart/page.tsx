@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { ShoppingCart, Trash2, Plus, Minus, ArrowLeft } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -9,19 +8,13 @@ import styles from './CartPage.module.css';
 
 export default function CartPage() {
   const { items: cartItems, updateQuantity, removeItem, isHydrated } = useCart();
-  const [isLoading, setIsLoading] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const shipping: number = 0; // Free shipping
   const tax = subtotal * 0.08; // Example 8% tax
   const total = subtotal + shipping + tax;
 
-  if (isLoading) {
+  if (!isHydrated) {
     return (
       <div className={styles.loadingScreen}>
         <div className={styles.loadingContent}>
