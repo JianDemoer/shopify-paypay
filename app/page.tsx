@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { getProducts, ShopifyConfigurationError } from '@/lib/shopify';
-import { isProductionRuntime } from '@/lib/runtime';
 import { ProductCard } from '@/components/ProductCard';
 import { HeroCarousel } from '@/components/HeroCarousel';
 import { FamilyPlanPromo } from '@/components/FamilyPlanPromo';
@@ -40,7 +39,7 @@ export default async function Home() {
   try {
     products = await getProducts();
   } catch (error) {
-    if (!(error instanceof ShopifyConfigurationError) || isProductionRuntime()) throw error;
+    if (!(error instanceof ShopifyConfigurationError)) throw error;
     needsConfiguration = true;
   }
 

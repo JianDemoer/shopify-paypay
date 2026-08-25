@@ -1,5 +1,6 @@
-import { getProduct } from '@/lib/shopify';
+import { getProduct, ShopifyConfigurationError } from '@/lib/shopify';
 import { notFound } from 'next/navigation';
+import Link from 'next/link';
 import Image from 'next/image';
 import { AddToCart } from '@/components/AddToCart';
 import type { Metadata } from 'next';
@@ -17,7 +18,13 @@ interface ProductPageProps {
 
 export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
   const { handle } = await params;
-  const product = await getProduct(handle);
+  let product;
+  try {
+    product = await getProduct(handle);
+  } catch (error) {
+    if (!(error instanceof ShopifyConfigurationError)) throw error;
+    return { title: 'Storefront not configured' };
+  }
 
   if (!product) {
     return {
@@ -59,7 +66,21 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
 
 export default async function ProductPage({ params }: ProductPageProps) {
   const { handle } = await params;
-  const product = await getProduct(handle);
+  let product: Awaited<ReturnType<typeof getProduct>>;
+  try {
+    product = await getProduct(handle);
+  } catch (error) {
+    if (!(error instanceof ShopifyConfigurationError)) throw error;
+    return (
+      <div className={styles.container}>
+        <div className={styles.infoContainer}>
+          <h1 className={styles.title}>Storefront not configured</h1>
+          <p className={styles.description}>Add a Shopify Storefront access token before loading products.</p>
+          <Link href="/admin/stores">Configure store</Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!product) {
     notFound();

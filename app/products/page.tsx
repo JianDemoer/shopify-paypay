@@ -1,6 +1,5 @@
 import Link from 'next/link';
 import { getProducts, ShopifyConfigurationError } from '@/lib/shopify';
-import { isProductionRuntime } from '@/lib/runtime';
 import { ProductCard } from '@/components/ProductCard';
 import styles from './ProductsPage.module.css';
 
@@ -13,7 +12,7 @@ export default async function ProductsPage() {
   try {
     products = await getProducts();
   } catch (error) {
-    if (!(error instanceof ShopifyConfigurationError) || isProductionRuntime()) throw error;
+    if (!(error instanceof ShopifyConfigurationError)) throw error;
     needsConfiguration = true;
   }
 
