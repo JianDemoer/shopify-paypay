@@ -16,7 +16,7 @@ A multi-store B2C checkout app built on the **Next.js 14 App Router**, **TypeScr
 
 ### The "Headless" Integration
 
-- **Commerce:** Shopify Admin API for server-side variant resolution, Draft Orders, order finalization, tagging, and inventory sync. The API version is controlled by `SHOPIFY_ADMIN_API_VERSION` (default `2025-10`).
+- **Commerce:** Shopify Admin API for server-side variant resolution, Draft Orders, order finalization, tagging, and inventory sync. The API version is controlled by `SHOPIFY_ADMIN_API_VERSION` (default `2026-07`).
 - **Payments:** [Stripe Elements](https://stripe.com/docs/payments/elements) (via the Stripe SDK) for a secure, PCI-compliant checkout — `PaymentElement` is the unified UI component rendered inside the Elements provider
 - **Architecture:** Versioned Funnel state machine with a single Draft Order that remains open until post-purchase steps finish
 

@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { redirect } from 'next/navigation';
 import { saveShopifyInstallation } from '@/lib/store-configs';
+import { ensureAppUninstalledWebhook } from '@/lib/shopify-webhooks';
 import { normalizeShopDomain, requestedShopifyScopes, shopifyOAuthConfig, verifyShopifyCallbackHmac, verifyShopifyOAuthState } from '@/lib/shopify-oauth';
 
 export async function GET(request: NextRequest) {
@@ -12,15 +13,31 @@ export async function GET(request: NextRequest) {
   if (!code) return new Response('Missing Shopify OAuth code.', { status: 400 });
   try {
     const config = shopifyOAuthConfig();
-    const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ client_id: config.clientId, client_secret: config.clientSecret, code }),
-    });
-    if (!tokenResponse.ok) return new Response(`Shopify token exchange failed: ${tokenResponse.status}`, { status: 502 });
-    const token = await tokenResponse.json() as { access_token?: string; scope?: string };
-    if (!token.access_token) return new Response('Shopify did not return an access token.', { status: 502 });
+    let token: { access_token?: string; scope?: string } | undefined;
+    let tokenStatus = 502;
+    for (const clientSecret of config.clientSecrets) {
+      const tokenResponse = await fetch(`https://${shop}/admin/oauth/access_token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ client_id: config.clientId, client_secret: clientSecret, code }),
+        cache: 'no-store',
+      });
+      tokenStatus = tokenResponse.status;
+      if (!tokenResponse.ok) continue;
+      token = await tokenResponse.json() as { access_token?: string; scope?: string };
+      if (token.access_token) break;
+    }
+    if (!token?.access_token) return new Response(`Shopify token exchange failed: ${tokenStatus}`, { status: 502 });
     await saveShopifyInstallation({ shopDomain: shop, accessToken: token.access_token, scopes: token.scope || requestedShopifyScopes() });
+    try {
+      await ensureAppUninstalledWebhook({
+        shopDomain: shop,
+        accessToken: token.access_token,
+        callbackUrl: `${config.appUrl}/api/webhooks/shopify`,
+      });
+    } catch (error) {
+      console.error('Shopify uninstall webhook registration failed:', error);
+    }
   } catch (error) {
     console.error('Shopify OAuth callback failed:', error);
     return new Response(error instanceof Error ? error.message : 'Shopify installation failed.', { status: 500 });

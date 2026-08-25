@@ -4,6 +4,7 @@ import path from 'path';
 import { normalizeUtm } from './checkout-pricing';
 import { isProductionRuntime } from './runtime';
 import type { CheckoutMode } from './funnel-configs';
+import { upstashRestConfig } from './upstash-config';
 
 export interface CheckoutLineItem {
   id: string;
@@ -106,8 +107,7 @@ globalForCheckout.__checkoutLockTokens = lockTokens;
 
 const DATA_DIR = process.env.CHECKOUT_SESSION_DATA_DIR || path.join(process.cwd(), '.data');
 const FILE_STORE_PATH = path.join(DATA_DIR, 'checkout-sessions.json');
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const { url: UPSTASH_URL, token: UPSTASH_TOKEN } = upstashRestConfig();
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
 const CHECKOUT_ACCESS_TTL_SECONDS = 30 * 60;
 

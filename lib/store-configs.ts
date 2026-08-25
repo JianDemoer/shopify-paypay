@@ -4,6 +4,7 @@ import path from 'path';
 import { isProductionRuntime } from './runtime';
 import type { CheckoutZone, FunnelConfig } from './funnel-configs';
 import { normalizeCheckoutZones, normalizeFunnelConfigs } from './funnel-configs';
+import { upstashRestConfig } from './upstash-config';
 
 export interface StoreConfig {
   id: string;
@@ -47,8 +48,7 @@ export class StoreConfigResolutionError extends Error {
 const DATA_DIR = process.env.CHECKOUT_SESSION_DATA_DIR || path.join(process.cwd(), '.data');
 const CONFIG_PATH = path.join(DATA_DIR, 'store-configs.json');
 const CONFIG_REDIS_KEY = 'omni_checkout:store_configs';
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const { url: REDIS_URL, token: REDIS_TOKEN } = upstashRestConfig();
 
 function slug(value: string) {
   return value

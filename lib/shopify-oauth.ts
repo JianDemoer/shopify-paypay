@@ -1,11 +1,32 @@
 import crypto from 'crypto';
 
-function secret() {
-  return process.env.SHOPIFY_API_SECRET || process.env.SHOPIFY_CLIENT_SECRET || process.env.CONFIG_ENCRYPTION_KEY || 'local-shopify-oauth-secret';
+export function shopifyClientSecrets(additional: Array<string | undefined> = []) {
+  return [...new Set([
+    ...additional,
+    process.env.SHOPIFY_API_SECRET,
+    process.env.SHOPIFY_CLIENT_SECRET,
+    process.env.SHOPIFY_API_SECRET_PREVIOUS,
+    process.env.SHOPIFY_CLIENT_SECRET_PREVIOUS,
+  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
 }
 
-function sign(value: string) {
-  return crypto.createHmac('sha256', secret()).update(value).digest('base64url');
+function secret() {
+  return shopifyClientSecrets()[0] || process.env.CONFIG_ENCRYPTION_KEY || 'local-shopify-oauth-secret';
+}
+
+function stateSecrets() {
+  const secrets = shopifyClientSecrets();
+  return secrets.length > 0 ? secrets : [secret()];
+}
+
+function sign(value: string, key = secret()) {
+  return crypto.createHmac('sha256', key).update(value).digest('base64url');
+}
+
+function safeEqual(left: string, right: string) {
+  const leftBuffer = Buffer.from(left, 'utf8');
+  const rightBuffer = Buffer.from(right, 'utf8');
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function validShop(value: string) {
@@ -25,9 +46,7 @@ export function createShopifyOAuthState(shop: string, now = Date.now()) {
 export function verifyShopifyOAuthState(state: string, expectedShop: string, now = Date.now()) {
   const [payload, provided] = String(state || '').split('.');
   if (!payload || !provided) return false;
-  const expectedSignature = Buffer.from(sign(payload));
-  const providedSignature = Buffer.from(provided);
-  if (expectedSignature.length !== providedSignature.length || !crypto.timingSafeEqual(expectedSignature, providedSignature)) return false;
+  if (!stateSecrets().some((key) => safeEqual(sign(payload, key), provided))) return false;
   try {
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { shop?: string; exp?: number; nonce?: string };
     return decoded.shop === expectedShop && Boolean(decoded.nonce) && Number(decoded.exp) >= Math.floor(now / 1000);
@@ -44,10 +63,10 @@ export function verifyShopifyCallbackHmac(searchParams: URLSearchParams) {
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([key, value]) => `${key}=${value}`)
     .join('&');
-  const expected = crypto.createHmac('sha256', secret()).update(message).digest('hex');
-  const left = Buffer.from(expected, 'utf8');
-  const right = Buffer.from(provided, 'utf8');
-  return left.length === right.length && crypto.timingSafeEqual(left, right);
+  return stateSecrets().some((key) => {
+    const expected = crypto.createHmac('sha256', key).update(message).digest('hex');
+    return safeEqual(expected, provided);
+  });
 }
 
 export function shopifyOAuthConfig() {
@@ -56,7 +75,7 @@ export function shopifyOAuthConfig() {
   const appUrl = (process.env.SHOPIFY_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || '').replace(/\/$/, '');
   const redirectUri = process.env.SHOPIFY_OAUTH_REDIRECT_URI || `${appUrl}/api/auth/shopify/callback`;
   if (!clientId || !clientSecret || !appUrl) throw new Error('SHOPIFY_API_KEY, SHOPIFY_API_SECRET, and SHOPIFY_APP_URL are required');
-  return { clientId, clientSecret, appUrl, redirectUri };
+  return { clientId, clientSecret, clientSecrets: shopifyClientSecrets(), appUrl, redirectUri };
 }
 
 export function requestedShopifyScopes() {

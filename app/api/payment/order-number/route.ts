@@ -54,7 +54,7 @@ export async function GET(req: Request) {
 
     for (const tag of tagQueries) {
       const response = await fetch(
-        `https://${storeConfig.shopDomain}/admin/api/${process.env.SHOPIFY_ADMIN_API_VERSION || '2025-10'}/orders.json?status=any&limit=250&tag=${encodeURIComponent(tag)}&fields=id,order_number,tags`,
+        `https://${storeConfig.shopDomain}/admin/api/${process.env.SHOPIFY_ADMIN_API_VERSION || '2026-07'}/orders.json?status=any&limit=250&tag=${encodeURIComponent(tag)}&fields=id,order_number,tags`,
         {
           headers: {
             'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,

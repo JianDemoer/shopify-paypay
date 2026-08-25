@@ -1,8 +1,8 @@
 import crypto from 'crypto';
 import { isProductionRuntime } from './runtime';
+import { upstashRestConfig } from './upstash-config';
 
-const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const { url: UPSTASH_URL, token: UPSTASH_TOKEN } = upstashRestConfig();
 
 interface RateLimitResult {
   allowed: boolean;

@@ -2,6 +2,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import path from 'path';
 import crypto from 'crypto';
 import { isProductionRuntime } from './runtime';
+import { upstashRestConfig } from './upstash-config';
 
 export type CheckoutEventType =
   | 'checkout_started'
@@ -32,8 +33,7 @@ export interface CheckoutEvent {
 
 const DATA_DIR = process.env.CHECKOUT_SESSION_DATA_DIR || path.join(process.cwd(), '.data');
 const FILE_PATH = path.join(DATA_DIR, 'checkout-events.json');
-const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL;
-const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const { url: REDIS_URL, token: REDIS_TOKEN } = upstashRestConfig();
 const REDIS_KEY = 'omni_checkout:events';
 const MAX_EVENTS = 100000;
 

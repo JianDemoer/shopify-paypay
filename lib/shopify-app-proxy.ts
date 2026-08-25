@@ -1,11 +1,18 @@
 import crypto from 'crypto';
 import { isProductionRuntime } from './runtime';
+import { shopifyClientSecrets } from './shopify-oauth';
 
 export function verifyAppProxySearchParams(
   searchParams: Record<string, string | string[] | undefined>,
   secret = process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET || ''
 ) {
-  if (!secret) return !isProductionRuntime();
+  const secrets = [...new Set([
+    secret,
+    process.env.SHOPIFY_APP_PROXY_SECRET,
+    process.env.SHOPIFY_APP_PROXY_SECRET_PREVIOUS,
+    ...shopifyClientSecrets(),
+  ].map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+  if (secrets.length === 0) return !isProductionRuntime();
 
   const signature = stringValue(searchParams.signature);
   if (!signature) return false;
@@ -21,12 +28,13 @@ export function verifyAppProxySearchParams(
     .sort();
 
   const message = sortedPairs.join('');
-  const digest = crypto
-    .createHmac('sha256', secret)
-    .update(message)
-    .digest('hex');
-
-  return safeCompare(digest, signature);
+  return secrets.some((key) => {
+    const digest = crypto
+      .createHmac('sha256', key)
+      .update(message)
+      .digest('hex');
+    return safeCompare(digest, signature);
+  });
 }
 
 function stringValue(value: string | string[] | undefined) {

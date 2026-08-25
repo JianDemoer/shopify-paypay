@@ -1,6 +1,6 @@
 name = "Omni Checkout"
-client_id = "REPLACE_WITH_SHOPIFY_API_KEY"
-application_url = "https://REPLACE_WITH_APP_DOMAIN"
+client_id = "d426756725347ec67cf72cd03948739d"
+application_url = "https://shopify-omni-checkout.vercel.app"
 embedded = true
 
 [build]
@@ -10,16 +10,16 @@ automatically_update_urls_on_dev = true
 scopes = "read_products,read_orders,write_orders,write_draft_orders"
 
 [auth]
-redirect_urls = ["https://REPLACE_WITH_APP_DOMAIN/api/auth/shopify/callback"]
+redirect_urls = ["https://shopify-omni-checkout.vercel.app/api/auth/shopify/callback"]
 
 [webhooks]
-api_version = "2025-10"
+api_version = "2026-07"
 
 [[webhooks.subscriptions]]
 topics = ["app/uninstalled"]
 uri = "/api/webhooks/shopify"
 
 [app_proxy]
-url = "https://REPLACE_WITH_APP_DOMAIN/a/s"
+url = "https://shopify-omni-checkout.vercel.app/a/s"
 prefix = "a"
 subpath = "s"

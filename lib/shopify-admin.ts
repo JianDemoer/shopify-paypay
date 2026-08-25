@@ -7,7 +7,7 @@ import type { StoreConfig } from './store-configs';
 import type { CheckoutLineItem } from './checkout-sessions';
 import { acquireCheckoutLock, releaseCheckoutLock } from './checkout-sessions';
 
-const SHOPIFY_ADMIN_API_VERSION = process.env.SHOPIFY_ADMIN_API_VERSION || '2025-10';
+const SHOPIFY_ADMIN_API_VERSION = process.env.SHOPIFY_ADMIN_API_VERSION || '2026-07';
 
 function adminUrl(storeConfig: StoreConfig, resource: string) {
   return `https://${storeConfig.shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/${resource}`;
