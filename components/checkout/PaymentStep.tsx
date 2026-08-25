@@ -104,9 +104,6 @@ function PaymentForm({
             </div>
           )}
         </div>
-        <p className={styles.testCardInfo}>
-          💳 Test: 4242 4242 4242 4242
-        </p>
       </div>
 
       <button

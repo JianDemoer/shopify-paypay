@@ -39,7 +39,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         setItems(JSON.parse(savedCart));
       }
     } catch (error) {
-      console.error('Error loading cart from localStorage:', error);
+      console.error('Error loading cart:', error);
     }
 
     // Mark as hydrated after attempting to load

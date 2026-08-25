@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { deleteStoreConfig, listStoreConfigs, publicStoreConfig, saveStoreConfig } from '@/lib/store-configs';
+import { isProductionRuntime } from '@/lib/runtime';
 
 function isAuthorized(request: NextRequest) {
   const token = process.env.ADMIN_CONFIG_TOKEN;
-  if (!token) return true;
+  if (!token) return !isProductionRuntime();
   return request.headers.get('x-admin-token') === token;
 }
 

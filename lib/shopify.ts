@@ -1,13 +1,38 @@
 import { ShopifyProduct, ShopifyCart, ShopifyCollection } from '@/types/shopify';
+import { getStoreConfig, StoreConfigResolutionError } from './store-configs';
 
-async function shopifyFetch<T>({ query, variables }: { query: string; variables?: any }): Promise<T> {
-  // Load environment variables dynamically
-  const domain = process.env.SHOPIFY_STORE_DOMAIN;
-  const storefrontAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+export class ShopifyConfigurationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ShopifyConfigurationError';
+  }
+}
+
+async function storefrontCredentials() {
+  let domain = process.env.SHOPIFY_STORE_DOMAIN;
+  let storefrontAccessToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
 
   if (!domain || !storefrontAccessToken) {
-    throw new Error('Missing required environment variables: SHOPIFY_STORE_DOMAIN or SHOPIFY_STOREFRONT_ACCESS_TOKEN');
+    try {
+      const store = await getStoreConfig(process.env.CHECKOUT_PUBLIC_STORE_ID || domain);
+      domain ||= store.shopDomain;
+      storefrontAccessToken ||= store.storefrontAccessToken;
+    } catch (error) {
+      if (!(error instanceof StoreConfigResolutionError)) throw error;
+    }
   }
+
+  if (!domain || !storefrontAccessToken) {
+    throw new ShopifyConfigurationError(
+      'Missing required environment variables or default store configuration: SHOPIFY_STORE_DOMAIN and SHOPIFY_STOREFRONT_ACCESS_TOKEN.'
+    );
+  }
+
+  return { domain, storefrontAccessToken };
+}
+
+async function shopifyFetch<T>({ query, variables }: { query: string; variables?: any }): Promise<T> {
+  const { domain, storefrontAccessToken } = await storefrontCredentials();
 
   const endpoint = `https://${domain}/api/2024-01/graphql.json`;
 

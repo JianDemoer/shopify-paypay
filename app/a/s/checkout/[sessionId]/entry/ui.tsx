@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import Image from 'next/image';
 import { PaymentStep } from '@/components/checkout/PaymentStep';
 import type { CheckoutSession } from '@/lib/checkout-sessions';
 import type { PublicStoreConfig } from '@/lib/store-configs';
@@ -26,6 +27,7 @@ interface OmniCheckoutProps {
   storeConfig: PublicStoreConfig;
   initialStep: string;
   cid: string;
+  checkoutToken: string;
 }
 
 const STEP_ORDER: Step[] = ['contact', 'shipping_method', 'payment_method'];
@@ -60,7 +62,7 @@ function loadScript(id: string, src: string) {
   document.head.appendChild(script);
 }
 
-export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: OmniCheckoutProps) {
+export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, checkoutToken }: OmniCheckoutProps) {
   const [step, setStepState] = useState<Step>(asStep(initialStep));
   const [session] = useState(initialSession);
   const [shippingMethod, setShippingMethod] = useState<'standard' | 'express'>('standard');
@@ -71,20 +73,22 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
   const paypalRef = useRef<HTMLDivElement | null>(null);
   const paypalRenderedRef = useRef(false);
   const paypalPayloadRef = useRef<Record<string, any> | null>(null);
+  const contactValidRef = useRef(false);
   const [contact, setContact] = useState<ContactState>({
-    email: 'stevejianj@gmail.com',
-    firstName: 'Jian',
-    lastName: 'Steve',
+    email: '',
+    firstName: '',
+    lastName: '',
     phone: '',
-    address1: '4452 Corporation Ln',
+    address1: '',
     address2: '',
-    city: 'Virginia Beach',
-    province: 'Virginia',
+    city: '',
+    province: '',
     country: 'United States',
-    zip: '23462',
+    zip: '',
   });
+  const isOnePage = session.checkoutMode === 'one_page';
 
-  const shipping = shippingMethod === 'express' ? 5.99 : session.shipping;
+  const shipping = shippingMethod === 'express' ? storeConfig.expressShipping : storeConfig.standardShipping;
   const total = useMemo(
     () => Number((session.subtotal + shipping + session.tax).toFixed(2)),
     [session.subtotal, session.tax, shipping]
@@ -113,34 +117,10 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
 
   function paypalPayload() {
     return {
-      amount: total,
-      currency: session.currency,
       checkoutSessionId: session.id,
-      storeId: storeConfig.id,
-      shopDomain: storeConfig.shopDomain,
       cid,
-      sourceUrl: window.location.href,
       shippingMethod,
-      utm: session.utm || {},
-      lineItems: session.items.map((item) => ({
-        productId: item.productId,
-        variantId: item.variantId,
-        quantity: item.quantity,
-        title: item.title,
-        price: item.price,
-      })),
-      shippingAddress: {
-        firstName: contact.firstName,
-        lastName: contact.lastName,
-        address1: contact.address1,
-        address2: contact.address2,
-        city: contact.city,
-        province: contact.province,
-        zip: contact.zip,
-        country: contact.country,
-        email: contact.email,
-        phone: contact.phone,
-      },
+      shippingAddress: contact,
     };
   }
 
@@ -153,40 +133,15 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
     setLoading(true);
     setError('');
     try {
-      const response = await fetch('/api/payment/create-intent', {
+      const response = await fetch(`/a/s/api/payment/create-intent?checkout_token=${encodeURIComponent(checkoutToken)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          amount: total,
-          currency: session.currency.toLowerCase(),
-          email: contact.email,
-          cartId: session.id,
           checkoutSessionId: session.id,
-          storeId: storeConfig.id,
-          shopDomain: storeConfig.shopDomain,
-          cid,
-          utm: session.utm || {},
+          purchaseKind: 'main',
           shippingMethod,
           sourceUrl: window.location.href,
-          lineItems: session.items.map((item) => ({
-            productId: item.productId,
-            variantId: item.variantId,
-            quantity: item.quantity,
-            title: item.title,
-            price: item.price,
-          })),
-          shippingAddress: {
-            firstName: contact.firstName,
-            lastName: contact.lastName,
-            address1: contact.address1,
-            address2: contact.address2,
-            city: contact.city,
-            province: contact.province,
-            zip: contact.zip,
-            country: contact.country,
-            email: contact.email,
-            phone: contact.phone,
-          },
+          shippingAddress: contact,
         }),
       });
       if (!response.ok) throw new Error('Failed to prepare payment.');
@@ -205,6 +160,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
 
   useEffect(() => {
     paypalPayloadRef.current = paypalPayload();
+    contactValidRef.current = Boolean(contactIsValid());
   });
 
   useEffect(() => {
@@ -223,7 +179,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
           height: 42,
         },
         onClick: () => {
-          if (!contactIsValid()) {
+          if (!contactValidRef.current) {
             setError('Please complete contact and shipping address before using PayPal.');
             return false;
           }
@@ -232,7 +188,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
         },
         createOrder: async () => {
           setPaypalLoading(true);
-          const response = await fetch('/api/payment/paypal/create-order', {
+          const response = await fetch(`/a/s/api/payment/paypal/create-order?checkout_token=${encodeURIComponent(checkoutToken)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(paypalPayloadRef.current),
@@ -242,13 +198,14 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
           return json.orderId;
         },
         onApprove: async (data: { orderID: string }) => {
-          const response = await fetch('/api/payment/paypal/capture-order', {
+          const response = await fetch(`/a/s/api/payment/paypal/capture-order?checkout_token=${encodeURIComponent(checkoutToken)}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...paypalPayloadRef.current, orderId: data.orderID }),
           });
           if (!response.ok) throw new Error('Unable to capture PayPal payment.');
-          window.location.href = `/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}&payment_intent=${encodeURIComponent(`paypal:${data.orderID}`)}`;
+          const capture = await response.json();
+          window.location.href = `/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}&parent_payment_intent=${encodeURIComponent(capture.paymentId)}&checkout_token=${encodeURIComponent(checkoutToken)}`;
         },
         onError: (err: Error) => {
           setPaypalLoading(false);
@@ -271,7 +228,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
     );
     const timer = window.setInterval(renderButtons, 300);
     return () => window.clearInterval(timer);
-  }, [cid, contact, session, shippingMethod, storeConfig.id, storeConfig.paypalClientId, storeConfig.shopDomain, total]);
+  }, [checkoutToken, cid, session, storeConfig.paypalClientId]);
 
   return (
     <div className={styles.page}>
@@ -289,9 +246,8 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
           </nav>
 
           <div className={styles.trustHeader}>
-            <div className={styles.safeTitle}><span>✓</span> Guaranteed SAFE Checkout</div>
+            <div className={styles.safeTitle}><span>✓</span> Secure Checkout</div>
             <div className={styles.logoRow}>
-              <strong>McAfee SECURE</strong>
               <strong>VISA</strong>
               <strong>MasterCard</strong>
               <strong>AMERICAN EXPRESS</strong>
@@ -299,10 +255,8 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
             </div>
           </div>
 
-          {step === 'contact' && (
+          {(isOnePage || step === 'contact') && (
             <section className={styles.formPanel}>
-              <div className={styles.urgency}>🔥 This product is very popular. Please complete your payment within 10 minutes; otherwise, the item could sell out!</div>
-              <div className={styles.reserve}>Your order is reserved for 09:27</div>
               <div className={styles.paypalWrap}>
                 <div ref={paypalRef} />
                 {!storeConfig.paypalClientId && (
@@ -334,19 +288,19 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
               <FloatingInput label="Phone (For shipping updates)" value={contact.phone} onChange={(value) => updateContact('phone', value)} />
 
               <div className={styles.actionRow}>
-                <button className={styles.backButton} type="button">‹ Return to cart</button>
+                <button className={styles.backButton} type="button" onClick={() => { window.location.href = '/cart'; }}>‹ Return to cart</button>
                 <button className={styles.primaryButton} type="button" onClick={() => contactIsValid() ? setStep('shipping_method') : setError('Please complete contact and shipping address.')}>Continue to shipping</button>
               </div>
             </section>
           )}
 
-          {step === 'shipping_method' && (
+          {(isOnePage || step === 'shipping_method') && (
             <section className={styles.formPanel}>
               <ReviewBox contact={contact} shippingMethod={shippingMethod} showShipping={false} onEdit={setStep} />
               <h2>Shipping method</h2>
               <div className={styles.methodBox}>
                 <ShippingOption id="standard" active={shippingMethod === 'standard'} price={session.shipping} label="Standard Shipping🌐(180 days Free refund)" onSelect={setShippingMethod} />
-                <ShippingOption id="express" active={shippingMethod === 'express'} price={5.99} label="Express🌐(Worldwide shipping)" onSelect={setShippingMethod} />
+                <ShippingOption id="express" active={shippingMethod === 'express'} price={storeConfig.expressShipping} label="Express🌐(Worldwide shipping)" onSelect={setShippingMethod} />
               </div>
               <div className={styles.actionRow}>
                 <button className={styles.backButton} type="button" onClick={() => setStep('contact')}>‹ Return to contact</button>
@@ -357,7 +311,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
             </section>
           )}
 
-          {step === 'payment_method' && (
+          {(isOnePage || step === 'payment_method') && (
             <section className={styles.formPanel}>
               <ReviewBox contact={contact} shippingMethod={shippingMethod} showShipping onEdit={setStep} />
               <h2>Payment method</h2>
@@ -366,7 +320,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
                 <PaymentStep
                   clientSecret={clientSecret}
                   publishableKey={storeConfig.stripePublishableKey}
-                  returnUrl={`${window.location.origin}/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}`}
+                  returnUrl={`${window.location.origin}/a/s/checkout/${encodeURIComponent(session.id)}/upsell?cid=${encodeURIComponent(cid)}&checkout_token=${encodeURIComponent(checkoutToken)}`}
                   onError={setError}
                 />
               ) : (
@@ -381,22 +335,18 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid }: 
           )}
 
           {error && <div className={styles.error}>{error}</div>}
-          <div className={styles.footerBadges}>Verified by VISA · MasterCard SecureCode · Norton Secured · McAfee Secure · SSL Encrypted</div>
+          <div className={styles.footerBadges}>Encrypted payment processing · Order confirmation by email</div>
           <footer className={styles.footer}>Privacy policy<br />© 2026, Powered by Shopify</footer>
         </section>
 
         <aside className={styles.summaryColumn}>
           <div className={styles.productRow}>
-            <div className={styles.thumbnail}>{firstItem?.image ? <img src={firstItem.image} alt="" /> : <span>1</span>}</div>
+            <div className={styles.thumbnail}>{firstItem?.image ? <Image src={firstItem.image} alt="" width={58} height={58} unoptimized /> : <span>1</span>}</div>
             <div>
               <strong>{firstItem?.title}</strong>
               <p>4-Pack — Family Favorite — Create together</p>
             </div>
             <strong>{money(session.subtotal, session.currency)}</strong>
-          </div>
-          <div className={styles.discountRow}>
-            <input placeholder="Discount code" />
-            <button type="button">Apply</button>
           </div>
           <SummaryLine label="Subtotal" value={money(session.subtotal, session.currency)} />
           <SummaryLine label="Shipping" value={money(shipping, session.currency)} />

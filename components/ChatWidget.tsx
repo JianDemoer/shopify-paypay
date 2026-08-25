@@ -5,10 +5,12 @@ import Script from 'next/script';
 
 export function ChatWidget() {
   useEffect(() => {
+    if (document.querySelector('[data-chat-widget-stylesheet]')) return;
     // Load CSS asynchronously to prevent render blocking
     const link = document.createElement('link');
     link.rel = 'stylesheet';
     link.href = 'https://ai-chatbot-lake-eight-99.vercel.app/chat-widget.css';
+    link.setAttribute('data-chat-widget-stylesheet', 'true');
     link.media = 'print';
     link.onload = function() {
       // @ts-ignore
@@ -36,6 +38,7 @@ export function ChatWidget() {
 
   return (
     <>      
+      <link rel="stylesheet" href="https://ai-chatbot-lake-eight-99.vercel.app/chat-widget.css" data-chat-widget-stylesheet="true" />
       {/* AI Chatbot Widget Script */}
       <Script
         src="https://ai-chatbot-lake-eight-99.vercel.app/chat-widget.js"

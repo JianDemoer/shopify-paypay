@@ -1,5 +1,7 @@
 import styles from './Footer.module.css';
 
+const supportEmail = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'support@example.com';
+
 export function Footer() {
   return (
     <footer className={styles.footer}>
@@ -27,7 +29,7 @@ export function Footer() {
           <div className={styles.section}>
             <h3 className={styles.heading}>Contact</h3>
             <p className={styles.text}>
-              Email: support@example.com<br />
+              Email: {supportEmail}<br />
               Phone: (555) 123-4567
             </p>
           </div>

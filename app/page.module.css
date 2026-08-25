@@ -110,6 +110,27 @@
   min-height: 400px;
 }
 
+.emptyState {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  min-height: 240px;
+  padding: 48px 24px;
+  border: 1px solid #d8dee8;
+  border-radius: 6px;
+  background: #f8fafc;
+  text-align: center;
+}
+
+.emptyState h3,
+.emptyState p {
+  margin: 0;
+}
+
+.emptyState p {
+  color: #536071;
+}
+
 /* Responsive Design */
 @media (max-width: 1024px) {
   .heroTitle {

@@ -26,6 +26,42 @@
   color: #64707d;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 0 0 auto;
+}
+
+.languageSwitch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(48px, 1fr));
+  overflow: hidden;
+  border: 1px solid #cfd6e0;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.languageSwitch button {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 0;
+  border-right: 1px solid #cfd6e0;
+  background: #fff;
+  color: #4d5866;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.languageSwitch button:last-child {
+  border-right: 0;
+}
+
+.languageSwitch .languageActive {
+  background: #1f2933;
+  color: #fff;
+}
+
 .count {
   min-width: 96px;
   padding: 10px 14px;
@@ -34,6 +70,12 @@
   background: #fff;
   text-align: center;
   font-weight: 700;
+}
+
+.reportsLink {
+  color: #1473e6;
+  font-weight: 700;
+  text-decoration: none;
 }
 
 .grid {
@@ -69,7 +111,8 @@
 }
 
 .field input,
-.field select {
+.field select,
+.codeField {
   width: 100%;
   min-height: 40px;
   padding: 0 11px;
@@ -78,6 +121,15 @@
   background: #fff;
   color: #1f2933;
   font-size: 14px;
+}
+
+.codeField {
+  min-height: 160px;
+  padding: 10px 11px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  resize: vertical;
 }
 
 .save {
@@ -165,8 +217,9 @@
     display: block;
   }
 
-  .count {
+  .headerActions {
     margin-top: 12px;
+    justify-content: space-between;
   }
 
   .grid {

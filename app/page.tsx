@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import dynamicImport from 'next/dynamic';
-import { getProducts } from '@/lib/shopify';
+import { getProducts, ShopifyConfigurationError } from '@/lib/shopify';
+import { isProductionRuntime } from '@/lib/runtime';
 import { ProductCard } from '@/components/ProductCard';
 import styles from './page.module.css';
 
@@ -44,7 +45,14 @@ const heroImages = [
 ];
 
 export default async function Home() {
-  const products = await getProducts();
+  let products: Awaited<ReturnType<typeof getProducts>> = [];
+  let needsConfiguration = false;
+  try {
+    products = await getProducts();
+  } catch (error) {
+    if (!(error instanceof ShopifyConfigurationError) || isProductionRuntime()) throw error;
+    needsConfiguration = true;
+  }
 
   return (
     <div className={styles.container} data-cy="homepage-container">
@@ -82,11 +90,19 @@ export default async function Home() {
       {/* Featured Products Section - After Carousel */}
       <section className={styles.productsSection} data-cy="featured-products-section">
         <h2 className={styles.sectionTitle} data-cy="featured-products-title">Featured Products</h2>
-        <div className={styles.productsGrid} data-cy="featured-products-grid">
-          {products.slice(0, 4).map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </div>
+        {needsConfiguration ? (
+          <div className={styles.emptyState}>
+            <h3>Storefront not configured</h3>
+            <p>Add a default Shopify store before loading products.</p>
+            <Link href="/admin/stores" className={`${styles.button} ${styles.buttonPrimary}`}>Configure store</Link>
+          </div>
+        ) : (
+          <div className={styles.productsGrid} data-cy="featured-products-grid">
+            {products.slice(0, 4).map((product) => (
+              <ProductCard key={product.id} product={product} />
+            ))}
+          </div>
+        )}
       </section>
 
       {/* Family Plan Promo Section */}

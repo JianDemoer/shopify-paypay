@@ -1,6 +1,6 @@
 # 🛍️ Shopify Headless Commerce with Next.js
 
-A high-performance headless ecommerce storefront built on the **Next.js 14 App Router**, **TypeScript**, and the **Shopify Storefront API**, with a custom checkout powered by **Stripe Elements** and a webhook-driven bridge to the **Shopify Admin REST API** for real-time order synchronization.
+A multi-store B2C checkout app built on the **Next.js 14 App Router**, **TypeScript**, Shopify App Proxy, Draft Orders, Stripe Elements, PayPal, and a webhook-driven Shopify Admin bridge.
 
 🎯 **[Live Demo](https://shopify-headless-lemon.vercel.app/)** — _Experience the custom checkout flow._
 
@@ -16,9 +16,9 @@ A high-performance headless ecommerce storefront built on the **Next.js 14 App R
 
 ### The "Headless" Integration
 
-- **Commerce:** [Shopify Admin REST API](https://shopify.dev/docs/api/admin-rest) for robust order management, tagging, and inventory sync (REST, not GraphQL — order creation, lookup, and tagging all hit `admin/api/2024-01/orders.json`)
+- **Commerce:** Shopify Admin API for server-side variant resolution, Draft Orders, order finalization, tagging, and inventory sync. The API version is controlled by `SHOPIFY_ADMIN_API_VERSION` (default `2025-10`).
 - **Payments:** [Stripe Elements](https://stripe.com/docs/payments/elements) (via the Stripe SDK) for a secure, PCI-compliant checkout — `PaymentElement` is the unified UI component rendered inside the Elements provider
-- **Architecture:** Asynchronous Webhook Handshake with frontend polling to ensure data consistency between Stripe and Shopify
+- **Architecture:** Versioned Funnel state machine with a single Draft Order that remains open until post-purchase steps finish
 
 ---
 
@@ -33,14 +33,14 @@ The core of this project is a bespoke checkout system that maintains **100% bran
 
 ### 2. Resilience & "Ghost Order" Prevention
 
-- **Webhook-Driven Logic:** Orders are *not* created on the frontend redirect. Instead, a Next.js API Route (`/api/payment/webhook`) listens for `payment_intent.succeeded`.
+- **Webhook-Driven Logic:** Orders are *not* created on the frontend redirect. Instead, a Next.js API Route (`/api/payment/webhook`) listens for `payment_intent.succeeded` and advances the Funnel.
 - **Signature Verification:** Employs `stripe.webhooks.constructEvent` to verify cryptographic signatures, ensuring only authentic Stripe events can trigger Shopify order creation.
-- **Asynchronous Reliability:** The architecture handles "Ghost Orders"—situations where a user pays but closes their browser before the redirect—ensuring the Shopify Admin is always updated.
+- **Reliability:** The webhook verifies payment and advances the funnel; a scheduled finalizer handles paid sessions whose buyer leaves before the post-purchase funnel completes.
 
 ### 3. Shopify Admin Sync
 
 - **Variant ID Translation:** Maps Storefront GIDs to Admin-specific numeric IDs to handle inventory decrements.
-- **Race-Condition Handling:** The success page uses a polling mechanism to fetch the order number from a temporary cache, providing a seamless UX while the webhook processes in the background.
+- **Race-Condition Handling:** The success page polls for the Shopify order while the verified webhook or scheduled finalizer completes the order.
 - **Idempotency:** Utilizes Payment Intent ID tagging to prevent duplicate orders during webhook retries.
 
 ---
@@ -59,11 +59,11 @@ Unlike basic Shopify integrations, this project implements a **Resilient Webhook
 - We verify cryptographic signature using `stripe.webhooks.constructEvent()`
 - Only authenticated Stripe events can trigger order creation (prevents spoofing)
 
-### 3. **Async Background Processing**
-- Webhook handler returns `200 OK` to Stripe **immediately** (~50ms)
-- Shopify order creation happens asynchronously in background
-- This prevents Stripe's 30-second timeout during slow Admin API calls (which can take 1–3 seconds)
-- Payment is confirmed to customer, order is guaranteed to eventually appear in Shopify
+### 3. **Verified Payment Processing**
+- The webhook verifies the Stripe signature before changing checkout state.
+- It advances the funnel and finalizes the Shopify order in the same request.
+- `finalizeCheckoutSession` uses a distributed lock and Shopify idempotency tags, so retries do not create duplicate orders.
+- The Vercel cron finalizer handles sessions whose buyer leaves before the post-purchase funnel completes.
 
 ### 4. **Idempotency & Duplicate Prevention**
 - Each Shopify order is tagged with the Payment Intent ID: `Stripe-Payment, pi_xxxxx`
@@ -71,9 +71,8 @@ Unlike basic Shopify integrations, this project implements a **Resilient Webhook
 - If webhook is retried by Stripe, we return the existing order (no duplicates)
 
 ### 5. **Resilient Success Page Polling**
-- Success page can't display order number until cache is populated
-- Webhook processes asynchronously, so data arrives ~500ms–2s after payment
-- Instead of showing "Processing..." forever, page polls `/api/payment/order-number` up to 10 times with 2-second intervals
+- The success page can wait for Shopify finalization when the webhook or cron is still processing.
+- It polls `/api/payment/order-number` up to 10 times with 2-second intervals
 - Once order is found, displays order number and provides direct link to Shopify Admin
 
 ### 6. **Shopify Admin Link for Portfolio Proof**
@@ -95,23 +94,15 @@ sequenceDiagram
     Frontend->>Stripe: Process Payment (Stripe Elements)
     Stripe-->>Frontend: Payment Successful (Client-side)
     
-    par Background Webhook Handshake
-        Stripe->>API: POST /api/payment/webhook (payment_intent.succeeded)
-        API->>API: Verify Stripe Signature
-        API-->>Stripe: 200 OK (Immediate Acknowledge)
-        API->>Shopify: Create Order (Line Items + Metadata)
-        Shopify-->>API: Order #1014 Created
-        API->>API: Cache Order Mapping (PI ID -> Order #)
-    and Frontend UX
-        Frontend->>User: Redirect to /checkout/success
-        loop Polling
-            Frontend->>API: GET /api/payment/order-number?pi=xyz
-            alt Not in Cache
-                API-->>Frontend: 404 Not Found
-            else Order Found
-                API-->>Frontend: 200 OK (Order #1014)
-            end
-        end
+    Stripe->>API: POST /api/payment/webhook (payment_intent.succeeded)
+    API->>API: Verify Stripe Signature
+    API->>Shopify: Update and complete one Draft Order
+    Shopify-->>API: Order #1014 Created
+    API-->>Stripe: 200 OK after verified processing
+    Frontend->>User: Redirect to /checkout/success
+    loop Polling while finalization is pending
+        Frontend->>API: GET /api/payment/order-number?checkout_session_id=...
+        API-->>Frontend: Order number or 404 until ready
     end
     
     Frontend->>User: Display Order #1014 & Admin Link
@@ -142,10 +133,10 @@ sequenceDiagram
      │                       │                       │                         │
      │                       │ POST /webhook (signed)│                         │
      │                       ├──────────────────────>│                         │
-     │                       │<────── 200 OK ────────┤ (return immediately)    │
      │                       │                       │                         │
-     │ 4. Redirect           │                   [async background]            │
-     │ to Success            │                       ├──────Create Order─────>│
+     │                       │                       │                         │
+     │ 4. Redirect           │                   [finalization may retry]      │
+     │ to Success            │                       ├──Update Draft + complete─>│
      │ (polling starts)      │                       │                         │
      │                       │                       │<─── Order Created ──────┤
      │                       │                       │ (1-3 seconds)           │
@@ -161,10 +152,10 @@ sequenceDiagram
      
 KEY FEATURES OF THIS FLOW:
 • Phase A: Stripe Elements captures payment with cart metadata
-• Phase B: 200 OK returned to Stripe immediately (prevents timeout/retries)
-• Phase C: Async order creation happens in background
-• Phase D: Frontend polling bridges the gap between payment success and Shopify confirmation
-• Phase E: Direct Shopify Admin link proves order exists (portfolio demo gold!)
+• Phase B: The signed webhook verifies the payment before changing order state
+• Phase C: A finalization lock and Shopify tags prevent duplicate orders
+• Phase D: The scheduled finalizer retries paid sessions that need completion
+• Phase E: Frontend polling bridges the gap between payment success and Shopify confirmation
 ```
 
 ---
@@ -209,7 +200,7 @@ Webhooks allow orders to be created in Shopify Admin even if the user closes the
 📧 Webhook event received: payment_intent.succeeded
 📦 Line item mapping: variantId=44303963652141, quantity=2
 ✅ Order created: #1010 (ID: 6137892339757) in Shopify Admin
-📦 Cached order #1010 for frontend polling
+📦 Shopify order #1010 available for frontend polling
 ```
 
 ---
@@ -468,8 +459,11 @@ npm install
 
 ### Run Local Dev Server
 ```bash
-npm run dev
+./start.sh
 ```
+
+`start.sh` uses an existing local Node.js runtime and never installs dependencies implicitly. Set a different local address with `HOST=127.0.0.1 PORT=3001 ./start.sh`.
+Development output is isolated in `.next-dev`, so a production build can run without corrupting the active development server.
 
 ### Build for Production
 ```bash

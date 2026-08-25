@@ -176,9 +176,6 @@ function CheckoutFormInner({
         )}
       </button>
 
-      <p className={styles.disclaimer}>
-        💳 Test card: 4242 4242 4242 4242 (any future date, any CVC)
-      </p>
     </form>
   );
 }

@@ -11,5 +11,8 @@
     },
     "productionBranch": "main",
     "deploymentProtection": true
-  }
+  },
+  "crons": [
+    { "path": "/api/cron/finalize-checkouts", "schedule": "*/5 * * * *" }
+  ]
 }

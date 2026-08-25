@@ -1,15 +1,6 @@
 import type { Metadata, Viewport } from "next";
-import { Inter } from "next/font/google";
 import "./globals.css";
 import { RootLayoutClient } from "./layout-client";
-
-const inter = Inter({ 
-  subsets: ["latin"],
-  display: 'swap',
-  preload: true,
-  weight: ['400', '500', '600', '700'],
-  fallback: ['system-ui', '-apple-system', 'sans-serif'],
-});
 
 export const viewport: Viewport = {
   width: 'device-width',
@@ -80,8 +71,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        {/* Google Fonts automatically preloaded via next/font/google */}
-        
         {/* Inline critical CSS to eliminate render-blocking requests */}
         <style dangerouslySetInnerHTML={{__html: `
           .heroSection { max-width: 1200px; margin: 0 auto; padding: 4rem 1rem; width: 100%; }
@@ -102,7 +91,7 @@ export default function RootLayout({
           }
         `}} />
       </head>
-      <body className={inter.className}>
+      <body>
         <RootLayoutClient>
           {children}
         </RootLayoutClient>

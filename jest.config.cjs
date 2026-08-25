@@ -25,7 +25,7 @@ const customJestConfig = {
     '^@/types/(.*)$': '<rootDir>/types/$1',
     '^@/contexts/(.*)$': '<rootDir>/contexts/$1',
   },
-  testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/', '<rootDir>/cypress/'],
+  testPathIgnorePatterns: ['<rootDir>/.next/', '<rootDir>/node_modules/', '<rootDir>/cypress/', '<rootDir>/playwright/'],
   collectCoverageFrom: [
     'components/**/*.{js,jsx,ts,tsx}',
     'contexts/**/*.{js,jsx,ts,tsx}',

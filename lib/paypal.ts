@@ -37,6 +37,8 @@ export async function createPayPalOrder(input: {
   currency: string;
   checkoutSessionId: string;
   cid?: string;
+  purchaseKind?: 'main' | 'upsell';
+  stepId?: string;
 }) {
   const accessToken = await getPayPalAccessToken(input.storeConfig);
   const response = await fetch(`${paypalApiBase(input.storeConfig)}/v2/checkout/orders`, {
@@ -45,13 +47,14 @@ export async function createPayPalOrder(input: {
       Authorization: `Bearer ${accessToken}`,
       'Content-Type': 'application/json',
       Prefer: 'return=representation',
+      'PayPal-Request-Id': `${input.checkoutSessionId}:${input.stepId || input.purchaseKind || 'main'}`.slice(0, 108),
     },
     body: JSON.stringify({
       intent: 'CAPTURE',
       purchase_units: [
         {
-          custom_id: input.checkoutSessionId,
-          invoice_id: `${input.checkoutSessionId}-${Date.now()}`,
+          custom_id: `${input.checkoutSessionId}:${input.stepId || input.purchaseKind || 'main'}`,
+          invoice_id: `${input.checkoutSessionId}-${input.stepId || input.purchaseKind || 'main'}`.slice(0, 127),
           amount: {
             currency_code: input.currency.toUpperCase(),
             value: input.amount.toFixed(2),
@@ -66,6 +69,15 @@ export async function createPayPalOrder(input: {
     throw new Error(`PayPal order creation failed: ${response.status} ${await response.text()}`);
   }
 
+  return response.json();
+}
+
+export async function getPayPalOrder(storeConfig: StoreConfig, orderId: string) {
+  const accessToken = await getPayPalAccessToken(storeConfig);
+  const response = await fetch(`${paypalApiBase(storeConfig)}/v2/checkout/orders/${encodeURIComponent(orderId)}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw new Error(`PayPal order lookup failed: ${response.status}`);
   return response.json();
 }
 

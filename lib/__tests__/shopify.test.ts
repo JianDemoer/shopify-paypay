@@ -7,15 +7,24 @@ import {
   createCart,
   addToCart,
 } from '../shopify';
+import { getStoreConfig, StoreConfigResolutionError } from '../store-configs';
+
+jest.mock('../store-configs', () => ({
+  getStoreConfig: jest.fn(),
+  StoreConfigResolutionError: class StoreConfigResolutionError extends Error {},
+}));
 
 // Mock the global fetch function
 global.fetch = jest.fn();
 
 describe('Shopify API Functions', () => {
   const mockFetch = global.fetch as jest.MockedFunction<typeof fetch>;
+  const mockGetStoreConfig = getStoreConfig as jest.MockedFunction<typeof getStoreConfig>;
 
   beforeEach(() => {
     mockFetch.mockClear();
+    mockGetStoreConfig.mockReset();
+    mockGetStoreConfig.mockRejectedValue(new StoreConfigResolutionError('No default store'));
     // Set environment variables
     process.env.SHOPIFY_STORE_DOMAIN = 'test-store.myshopify.com';
     process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN = 'test-token';
@@ -89,6 +98,38 @@ describe('Shopify API Functions', () => {
       await expect(getProducts()).rejects.toThrow(
         'Missing required environment variables'
       );
+    });
+
+    it('uses the configured default store when environment variables are missing', async () => {
+      delete process.env.SHOPIFY_STORE_DOMAIN;
+      delete process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+      mockGetStoreConfig.mockResolvedValue({
+        shopDomain: 'configured-store.myshopify.com',
+        storefrontAccessToken: 'configured-token',
+      } as Awaited<ReturnType<typeof getStoreConfig>>);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ data: { products: { edges: [] } } }),
+      } as Response);
+
+      await expect(getProducts()).resolves.toEqual([]);
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://configured-store.myshopify.com/api/2024-01/graphql.json',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-Shopify-Storefront-Access-Token': 'configured-token',
+          }),
+        })
+      );
+    });
+
+    it('does not hide store configuration storage failures', async () => {
+      delete process.env.SHOPIFY_STORE_DOMAIN;
+      delete process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+      mockGetStoreConfig.mockRejectedValue(new Error('Redis unavailable'));
+
+      await expect(getProducts()).rejects.toThrow('Redis unavailable');
+      expect(mockFetch).not.toHaveBeenCalled();
     });
 
     it('handles API errors gracefully', async () => {

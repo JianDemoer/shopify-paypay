@@ -45,7 +45,7 @@
       var variant = product.variants.find(function (item) { return String(item.id) === String(selectedVariant); });
       if (variant && variant.price) return Number(variant.price) / 100;
     }
-    return 49.97;
+    return 0;
   }
 
   async function post(path, body) {
@@ -105,7 +105,7 @@
         currency: window.Shopify && window.Shopify.currency ? window.Shopify.currency.active : "USD",
         utm: utm()
       });
-      window.location.href = appProxyPrefix + "/checkout/" + encodeURIComponent(session.sessionId) + "/entry?cid=" + encodeURIComponent(session.cid || clientId);
+      window.location.href = session.redirectUrl || (appProxyPrefix + "/checkout/" + encodeURIComponent(session.sessionId) + "/entry?cid=" + encodeURIComponent(session.cid || clientId));
     } catch (error) {
       if (button) {
         button.disabled = false;

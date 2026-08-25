@@ -5,7 +5,8 @@ Next.js Shopify + Stripe project.
 
 ## What Is Included
 
-- Product-page takeover script: `/assets/opc-bootstrap.js`
+- Shopify Theme App Extension App Embed: `extensions/omni-checkout`
+- Product-page takeover script fallback: `/assets/opc-bootstrap.js`
 - Checkout session API: `POST /api/checkout/session`
 - Session lookup API: `GET /api/checkout/session/:sessionId`
 - App Proxy-style checkout route: `/a/s/checkout/:sessionId/entry?cid=...`
@@ -15,7 +16,7 @@ Next.js Shopify + Stripe project.
   - Payment
 - Stripe PaymentElement for PCI-safe card collection
 - PayPal JS SDK checkout with server-side capture and Shopify order creation
-- Existing Stripe webhook to create Shopify Admin orders after payment succeeds
+- Stripe webhook to advance payments and finalize the Shopify order after the Funnel completes
 - Shopify order tags/note attributes for `payment_intent`, `checkout_session`,
   `cid`, source URL, shipping method, and UTM attribution. Shopify's native
   pixel/channel integrations can use the resulting Shopify order for ad
@@ -23,19 +24,24 @@ Next.js Shopify + Stripe project.
 - Durable checkout sessions through Upstash Redis REST in production, with
   local file storage fallback for development
 - Post-purchase upsell route after the main Stripe payment succeeds
+- Versioned Funnel step graph with Checkout Zones, stable weighted routes, Downsell branches, and permalink routes
+- Stripe off-session post-purchase payment using the saved Stripe PaymentMethod; accepted offers are bundled into the original Draft Order
+- Shopify OAuth installation, App Proxy configuration, uninstall webhook, event storage, and checkout reports
 
 ## Local Run
 
 ```bash
 npm install
-npm run dev
+./start.sh
 ```
 
-Create a checkout session:
+The start script uses the installed dependencies directly and never runs an implicit install.
+It writes development compiler output to `.next-dev`; production builds continue to use `.next`.
+
+For local/admin tooling, create a checkout session directly:
 
 ```bash
 curl -X POST http://127.0.0.1:3000/api/checkout/session \
-  -H 'x-admin-token: change_this_token' \
   -H 'Content-Type: application/json' \
   -d '{
     "productId": "gid://shopify/Product/1",
@@ -81,8 +87,23 @@ Per store, fill:
 - PayPal client ID and secret
 - Order mode: Draft Order or Direct Order
 - Upsell product and variant GIDs
+- Checkout Zones and Funnel Versions JSON in the admin page
 
 ## Shopify Theme Injection
+
+The preferred production path is the Theme App Extension included in this
+repository. After installing the app, open **Online Store -> Themes ->
+Customize -> App embeds**, enable **Omni Checkout**, and save the theme. Deploy
+the extension with Shopify CLI so it is available to the installed app:
+
+```bash
+shopify app dev
+# or, for a deployed release:
+shopify app deploy
+```
+
+The embed listens for product-page checkout buttons and calls the configured
+App Proxy. It does not load card fields or handle payment credentials.
 
 Add this script through a Shopify App Embed or theme snippet:
 
@@ -111,9 +132,13 @@ signature before creating the checkout session.
 In production, App Proxy routes require a configured Shopify App Proxy secret.
 Missing secrets are allowed only during local development.
 
-The internal `/api/checkout/session` route is intended for admin/dev tooling.
-When `ADMIN_CONFIG_TOKEN` is set, direct calls to this route must include
-`x-admin-token`.
+The direct `/api/checkout/session` route is a public storefront entry point for
+the configured single store. It is protected by server-side variant/price
+resolution, the production store allowlist (`CHECKOUT_PUBLIC_STORE_ID` or
+`NEXT_PUBLIC_SHOPIFY_STORE_DOMAIN`), and rate limiting. It does not accept an
+admin token because a browser product page must be able to call it. Store
+management endpoints under `/api/admin/*` remain protected by
+`ADMIN_CONFIG_TOKEN`.
 
 ## Shopify App Proxy
 
@@ -161,15 +186,18 @@ Stripe returns the buyer to:
 /a/s/checkout/:sessionId/upsell?cid=:cid
 ```
 
-If the buyer declines the upsell, they continue to:
+If the buyer declines an offer, the configured Funnel decline edge is followed. It can lead to a Downsell or Thank You step.
+
+If the buyer completes the Funnel, they continue to:
 
 ```text
-/checkout/success?checkout_session_id=:sessionId&cid=:cid&upsell=declined
+/a/s/checkout/:sessionId/success?checkout_session_id=:sessionId
 ```
 
-If the buyer accepts the upsell, a second Stripe PaymentIntent is created. It is
-tagged in Shopify as `Post-Purchase-Upsell` and linked back to the main payment
-through `parent_payment:pi_...`.
+If the buyer accepts an offer, Stripe confirms a second PaymentIntent with the
+saved PaymentMethod. The server never receives PAN or CVC. The accepted item is
+added to the original Draft Order before it is completed, so the final Shopify
+order contains the main items and all accepted offers.
 
 ## Checkout Session Storage
 
@@ -189,16 +217,19 @@ UPSTASH_REDIS_REST_TOKEN=...
 ## Shopify Attribution
 
 This project does not send Meta/TikTok events directly. Attribution data is
-kept on the Shopify order so Shopify's native pixel/channel integrations can
-handle ad reporting.
+kept on the Shopify order and in the internal event store. An external custom
+checkout should not assume that creating an Admin order automatically fires
+Shopify's browser `checkout_completed` event; validate any Shopify Customer
+Events pixel or channel behavior with a real order.
 
 After payment succeeds:
 
 1. The webhook verifies the Stripe signature.
-2. The webhook creates a paid Shopify Admin order.
-3. The order is tagged with `payment_intent:...`, `checkout_session:...`, and
+2. The webhook marks the payment as paid and advances the Funnel state.
+3. At Thank You, the app updates and completes the single Draft Order (or creates one direct order).
+4. The order is tagged with `payment_intent:...`, `checkout_session:...`, and
    `cid:...`.
-4. The order note attributes include UTM, source URL, checkout session, and
+5. The order note attributes include UTM, source URL, checkout session, and
    shipping method for backend attribution and reporting.
 
 For multi-store setups, the Shopify store used for order creation is the store
@@ -211,9 +242,11 @@ allowed to switch the order into another store.
 2. Browser calls `/api/payment/paypal/create-order`.
 3. Buyer approves inside PayPal.
 4. Browser calls `/api/payment/paypal/capture-order`.
-5. The capture endpoint creates a paid Shopify order tagged as
-   `PayPal-Payment`.
-6. Buyer continues to the same post-purchase upsell page.
+5. The capture endpoint marks the primary payment as paid and advances the Funnel.
+6. A PayPal post-purchase offer opens a new PayPal authorization. It is not a
+   true one-click charge because PayPal Vault/reference transactions are not
+   enabled by this implementation.
+7. Accepted PayPal offers are added to the same Draft Order before completion.
 
 ## Draft Order Mode
 
@@ -223,14 +256,41 @@ Set:
 SHOPIFY_ORDER_MODE=draft_order
 ```
 
-In this mode, the Stripe checkout path creates a Shopify Draft Order before
-payment. The Stripe webhook completes that draft after
-`payment_intent.succeeded`. If `SHOPIFY_ORDER_MODE` is unset, the webhook
-creates a paid Shopify Admin order directly.
+In this mode, the payment setup path creates one Shopify Draft Order before
+payment. The draft stays open while post-purchase steps run. At Thank You, or
+after the scheduled finalizer timeout, the app updates the draft with accepted
+offers and completes it once. If `SHOPIFY_ORDER_MODE` is unset, the app creates
+one direct Shopify Admin order at finalization.
 
 ## Current Production Notes
 
 - App Proxy HMAC validation is enabled when `SHOPIFY_APP_PROXY_SECRET` is set.
-- Post-purchase upsell currently creates a separate Shopify order. If you want
-  upsells merged into the original order, use Shopify order editing or a
-  fulfillment-side merge rule after deployment.
+- The production finalizer is exposed at `/api/cron/finalize-checkouts` and is
+  scheduled by `vercel.json`. Set `CRON_SECRET` in production.
+- The app does not claim that creating an Admin order automatically fires
+  Shopify's browser `checkout_completed` event. External checkout pages should
+  treat Shopify order tags/note attributes as backend attribution. If exact
+  Meta/TikTok browser pixel behavior is required, configure the relevant
+  Shopify Customer Events pixel or a server-side conversion integration
+  separately and verify it with a real test order.
+
+## Shopify App Installation
+
+1. Replace the placeholders in `shopify.app.toml` with the deployed app URL and
+   Shopify API key.
+2. Set `SHOPIFY_API_KEY`, `SHOPIFY_API_SECRET`, `SHOPIFY_APP_URL`, and
+   `SHOPIFY_OAUTH_REDIRECT_URI`.
+3. Deploy the Next.js app and Theme App Extension. Run `shopify app config push`
+   or `shopify app deploy` from a Shopify CLI-authenticated environment.
+4. Open `/install?shop=your-store.myshopify.com` or install from the Shopify
+   Dev Dashboard.
+5. Complete Stripe/PayPal values and publish the store's Zones/Funnels at
+   `/admin/stores`.
+
+The OAuth callback saves the per-store Admin token encrypted at rest. The
+`app/uninstalled` webhook removes that store's installation record. App Proxy
+must point to `https://YOUR_APP_DOMAIN/a/s`, with prefix `a` and subpath `s`.
+
+The OAuth installation only connects Shopify. Stripe and PayPal credentials are
+intentionally left for `/admin/stores`, because they belong to the merchant's
+payment accounts and are not returned by Shopify OAuth.

@@ -1,0 +1,23 @@
+.page { min-height: 100vh; padding: 32px; background: #f4f7f8; color: #1c2b33; font-family: Arial, Helvetica, sans-serif; }
+.header, .toolbar, .metrics { width: min(1180px, 100%); margin: 0 auto; }
+.header { display: flex; justify-content: space-between; gap: 24px; align-items: flex-start; }
+.eyebrow { margin: 0 0 8px; color: #087f8c; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+.header h1 { margin: 0; font-size: 30px; }
+.header p:not(.eyebrow) { color: #62727a; }
+.headerActions { display: flex; align-items: center; gap: 14px; }
+.headerActions a { color: #087f8c; font-weight: 700; }
+.languageSwitch { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid #cbd7dc; border-radius: 5px; overflow: hidden; background: #fff; }
+.languageSwitch button { min-height: 38px; padding: 0 12px; border: 0; border-right: 1px solid #cbd7dc; background: #fff; cursor: pointer; }
+.languageSwitch button:last-child { border-right: 0; }
+.languageSwitch .active { background: #1c2b33; color: #fff; }
+.toolbar { display: flex; gap: 12px; align-items: flex-end; margin-top: 26px; padding: 16px; border: 1px solid #d6e0e4; border-radius: 7px; background: #fff; }
+.toolbar input, .toolbar select { min-height: 42px; padding: 0 10px; border: 1px solid #bdcbd1; border-radius: 5px; background: #fff; }
+.toolbar label { display: grid; gap: 5px; color: #52636b; font-size: 12px; font-weight: 700; }
+.toolbar button { min-height: 42px; padding: 0 16px; border: 0; border-radius: 5px; background: #087f8c; color: #fff; font-weight: 800; cursor: pointer; }
+.toolbar button:disabled { opacity: .65; cursor: wait; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+.metric { display: grid; gap: 10px; min-height: 100px; padding: 18px; border: 1px solid #d6e0e4; border-radius: 7px; background: #fff; }
+.metric span { color: #62727a; font-size: 13px; }
+.metric strong { font-size: 24px; }
+.error { width: min(1180px, 100%); margin: 14px auto; color: #b42318; }
+@media (max-width: 760px) { .page { padding: 18px; } .header { display: block; } .headerActions { margin-top: 16px; justify-content: space-between; } .toolbar { display: grid; } .toolbar input, .toolbar select, .toolbar button { width: 100%; } .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

@@ -64,7 +64,7 @@
   height: 76px;
   border-radius: 6px;
   overflow: hidden;
-  background: linear-gradient(135deg, #12a7c9, #f8c23a 45%, #e94f37);
+  background: #e9f3f5;
   color: #fff;
   font-weight: 800;
 }
@@ -103,9 +103,32 @@
 }
 
 .decline {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
   color: #626b7a;
   text-align: center;
   text-decoration: underline;
+  cursor: pointer;
+}
+
+.decline:disabled {
+  opacity: .65;
+  cursor: wait;
+}
+
+.disclosure {
+  margin: 16px 0 0;
+  color: #667085;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.accept {
+  display: grid;
+  place-items: center;
+  text-decoration: none;
 }
 
 .error {

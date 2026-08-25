@@ -1,11 +1,14 @@
 import { getCheckoutSession } from '@/lib/checkout-sessions';
-import { verifyAppProxySearchParams } from '@/lib/shopify-app-proxy';
+import { verifyCheckoutAccessToken } from '@/lib/checkout-access';
 import { getStoreConfig, publicStoreConfig } from '@/lib/store-configs';
 import { OmniCheckout } from './ui';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 interface PageProps {
   params: { sessionId: string };
-  searchParams?: { cid?: string; step?: string };
+  searchParams?: { cid?: string; step?: string; checkout_token?: string };
 }
 
 export default async function AppProxyCheckoutEntry({ params, searchParams }: PageProps) {
@@ -15,7 +18,12 @@ export default async function AppProxyCheckoutEntry({ params, searchParams }: Pa
   }
   const fullStoreConfig = await getStoreConfig(session.storeId || session.shopDomain);
 
-  if (!verifyAppProxySearchParams(searchParams || {}, fullStoreConfig.shopifyAppProxySecret)) {
+  const access = verifyCheckoutAccessToken(
+    searchParams?.checkout_token,
+    params.sessionId,
+    fullStoreConfig.shopifyAppProxySecret
+  );
+  if (!access) {
     return <div>Invalid checkout signature.</div>;
   }
 
@@ -26,7 +34,8 @@ export default async function AppProxyCheckoutEntry({ params, searchParams }: Pa
       initialSession={session}
       storeConfig={storeConfig}
       initialStep={searchParams?.step || 'contact'}
-      cid={searchParams?.cid || session.cid}
+      cid={session.cid}
+      checkoutToken={searchParams?.checkout_token || ''}
     />
   );
 }
