@@ -17,6 +17,7 @@ type AdminStore = PublicStoreConfig & {
 
 type StatusMessage =
   | { kind: 'saved'; domain: string }
+  | { kind: 'installed'; domain: string }
   | { kind: 'editSecrets' }
   | { kind: 'error'; text: string };
 
@@ -37,6 +38,7 @@ const translations = {
     configured: '已配置',
     notSet: '未配置',
     saved: (domain: string) => `已保存 ${domain}`,
+    installed: (domain: string) => `${domain} 已成功连接 Shopify。`,
     editSecrets: '出于安全原因，密钥不会回填。仅在需要替换密钥时重新输入。',
     fields: {
       adminToken: '后台管理令牌',
@@ -91,6 +93,7 @@ const translations = {
     configured: 'Configured',
     notSet: 'Not set',
     saved: (domain: string) => `Saved ${domain}`,
+    installed: (domain: string) => `${domain} connected to Shopify successfully.`,
     editSecrets: 'Secrets are not loaded back into the form. Re-enter them only if you want to replace them.',
     fields: {
       adminToken: 'Admin token',
@@ -154,6 +157,7 @@ function mask(value: string | undefined, configured: string, notSet: string) {
 
 function statusText(message: StatusMessage, locale: AdminLocale) {
   const t = translations[locale];
+  if (message.kind === 'installed') return t.installed(message.domain);
   if (message.kind === 'saved') return t.saved(message.domain);
   if (message.kind === 'editSecrets') return t.editSecrets;
   return t.errors[message.text] || message.text;
@@ -163,15 +167,17 @@ export function StoreAdmin({
   initialStores,
   adminTokenRequired = false,
   initialLocale = 'en',
+  installedShop,
 }: {
   initialStores: AdminStore[];
   adminTokenRequired?: boolean;
   initialLocale?: AdminLocale;
+  installedShop?: string;
 }) {
   const [locale, setLocale] = useState<AdminLocale>(initialLocale);
   const [stores, setStores] = useState(initialStores);
   const [form, setForm] = useState<StoreForm>(emptyForm);
-  const [message, setMessage] = useState<StatusMessage | null>(null);
+  const [message, setMessage] = useState<StatusMessage | null>(installedShop ? { kind: 'installed', domain: installedShop } : null);
   const [saving, setSaving] = useState(false);
   const t = translations[locale];
 
@@ -272,11 +278,13 @@ export function StoreAdmin({
       <section className={styles.grid}>
         <div className={styles.panel}>
           <h2>{t.formTitle}</h2>
-          <Field label={t.fields.adminToken} value={form.adminToken || ''} onChange={(value) => update('adminToken', value)} password />
           {adminTokenRequired && (
-            <button className={styles.secondary} type="button" onClick={() => refresh(form.adminToken || '').catch((error) => setMessage({ kind: 'error', text: error.message }))}>
-              {t.loadStores}
-            </button>
+            <>
+              <Field label={t.fields.adminToken} value={form.adminToken || ''} onChange={(value) => update('adminToken', value)} password />
+              <button className={styles.secondary} type="button" onClick={() => refresh(form.adminToken || '').catch((error) => setMessage({ kind: 'error', text: error.message }))}>
+                {t.loadStores}
+              </button>
+            </>
           )}
           <Field label={t.fields.storeName} value={form.name || ''} onChange={(value) => update('name', value)} />
           <Field label={t.fields.shopDomain} value={form.shopDomain || ''} onChange={(value) => update('shopDomain', value)} placeholder="example.myshopify.com" />

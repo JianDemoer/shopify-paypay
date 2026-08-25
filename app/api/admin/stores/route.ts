@@ -1,19 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { adminAccessForRequest } from '@/lib/admin-auth';
+import { normalizeShopDomain } from '@/lib/shopify-oauth';
 import { deleteStoreConfig, listStoreConfigs, publicStoreConfig, saveStoreConfig } from '@/lib/store-configs';
-import { isProductionRuntime } from '@/lib/runtime';
-
-function isAuthorized(request: NextRequest) {
-  const token = process.env.ADMIN_CONFIG_TOKEN;
-  if (!token) return !isProductionRuntime();
-  return request.headers.get('x-admin-token') === token;
-}
 
 export async function GET(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  const access = adminAccessForRequest(request);
+  if (!access) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const configs = await listStoreConfigs();
+  const configs = (await listStoreConfigs()).filter((config) => access.kind === 'global' || config.shopDomain === access.shopDomain);
   return NextResponse.json({
     stores: configs.map((config) => ({
       ...publicStoreConfig(config),
@@ -30,12 +26,17 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  const access = adminAccessForRequest(request);
+  if (!access) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
   try {
-    const config = await saveStoreConfig(await request.json());
+    const input = await request.json();
+    if (access.kind === 'shop' && normalizeShopDomain(input.shopDomain) !== access.shopDomain) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    }
+    const config = await saveStoreConfig(input);
     return NextResponse.json({ store: publicStoreConfig(config) });
   } catch (error) {
     return NextResponse.json(
@@ -46,7 +47,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  if (!isAuthorized(request)) {
+  const access = adminAccessForRequest(request);
+  if (!access) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
@@ -54,6 +56,11 @@ export async function DELETE(request: NextRequest) {
   const id = searchParams.get('id');
   if (!id) {
     return NextResponse.json({ error: 'Missing store id' }, { status: 400 });
+  }
+
+  if (access.kind === 'shop') {
+    const config = (await listStoreConfigs()).find((item) => item.id === id || item.shopDomain === id);
+    if (!config || config.shopDomain !== access.shopDomain) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   await deleteStoreConfig(id);

@@ -1,3 +1,4 @@
+import { ADMIN_SESSION_COOKIE, verifyAdminSession } from '@/lib/admin-auth';
 import { listStoreConfigs, publicStoreConfig } from '@/lib/store-configs';
 import { isProductionRuntime } from '@/lib/runtime';
 import { cookies, headers } from 'next/headers';
@@ -12,13 +13,15 @@ function preferredLocale(): AdminLocale {
   return headers().get('accept-language')?.toLowerCase().includes('zh') ? 'zh' : 'en';
 }
 
-export default async function StoreAdminPage() {
+export default async function StoreAdminPage({ searchParams }: { searchParams?: { installed?: string; shop?: string } }) {
   const initialLocale = preferredLocale();
-  if (process.env.ADMIN_CONFIG_TOKEN || isProductionRuntime()) {
-    return <StoreAdmin initialStores={[]} adminTokenRequired initialLocale={initialLocale} />;
+  const sessionShop = verifyAdminSession(cookies().get(ADMIN_SESSION_COOKIE)?.value);
+  const installedShop = searchParams?.installed === '1' ? searchParams.shop : undefined;
+  if ((process.env.ADMIN_CONFIG_TOKEN || isProductionRuntime()) && !sessionShop) {
+    return <StoreAdmin initialStores={[]} adminTokenRequired initialLocale={initialLocale} installedShop={installedShop} />;
   }
 
-  const stores = await listStoreConfigs();
+  const stores = (await listStoreConfigs()).filter((store) => !sessionShop || store.shopDomain === sessionShop);
   return <StoreAdmin initialStores={stores.map((store) => ({
     ...publicStoreConfig(store),
     hasShopifyAdminAccessToken: Boolean(store.shopifyAdminAccessToken),
@@ -27,5 +30,5 @@ export default async function StoreAdminPage() {
     hasPaypalClientSecret: Boolean(store.paypalClientSecret),
     createdAt: store.createdAt,
     updatedAt: store.updatedAt,
-  }))} initialLocale={initialLocale} />;
+  }))} initialLocale={initialLocale} installedShop={installedShop} />;
 }
