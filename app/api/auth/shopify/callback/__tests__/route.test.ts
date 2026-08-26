@@ -94,7 +94,7 @@ describe('Shopify installation callback', () => {
     expect(mockRedirectResponse.cookies.set).toHaveBeenCalledWith(
       'omni_admin_session',
       'admin-session',
-      expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'lax' })
+      expect.objectContaining({ httpOnly: true, secure: true, sameSite: 'none' })
     );
     expect(ensureAppUninstalledWebhook).toHaveBeenCalled();
     expect(saveShopifyInstallation).toHaveBeenCalled();

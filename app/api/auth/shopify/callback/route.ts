@@ -54,10 +54,13 @@ export async function GET(request: NextRequest) {
   destination.searchParams.set('shop', shop);
   destination.searchParams.set('installed', '1');
   const response = NextResponse.redirect(destination);
+  // Shopify Admin renders embedded apps in a cross-site iframe. HTTPS callbacks
+  // therefore require a third-party compatible session cookie; local HTTP does not.
+  const isSecureAppUrl = destination.protocol === 'https:';
   response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSession(shop), {
     httpOnly: true,
-    secure: destination.protocol === 'https:',
-    sameSite: 'lax',
+    secure: isSecureAppUrl,
+    sameSite: isSecureAppUrl ? 'none' : 'lax',
     path: '/',
     maxAge: ADMIN_SESSION_MAX_AGE,
   });
