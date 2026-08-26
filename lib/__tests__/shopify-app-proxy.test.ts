@@ -17,4 +17,26 @@ describe('Shopify App Proxy signatures', () => {
 
     expect(verifyAppProxySearchParams({ ...params, signature }, 'new-secret')).toBe(true);
   });
+
+  it('rejects replayed proxy URLs in production', () => {
+    process.env.VERCEL_ENV = 'production';
+    const secret = 'proxy-secret';
+    const now = Date.parse('2026-08-26T12:00:00.000Z');
+    const params = { path_prefix: '/a/s', shop: 'demo.myshopify.com', timestamp: String(Math.floor(now / 1000) - 301) };
+    const message = Object.entries(params).map(([key, value]) => `${key}=${value}`).sort().join('');
+    const signature = crypto.createHmac('sha256', secret).update(message).digest('hex');
+
+    expect(verifyAppProxySearchParams({ ...params, signature }, secret, now)).toBe(false);
+  });
+
+  it('accepts a fresh proxy URL in production', () => {
+    process.env.VERCEL_ENV = 'production';
+    const secret = 'proxy-secret';
+    const now = Date.parse('2026-08-26T12:00:00.000Z');
+    const params = { path_prefix: '/a/s', shop: 'demo.myshopify.com', timestamp: String(Math.floor(now / 1000)) };
+    const message = Object.entries(params).map(([key, value]) => `${key}=${value}`).sort().join('');
+    const signature = crypto.createHmac('sha256', secret).update(message).digest('hex');
+
+    expect(verifyAppProxySearchParams({ ...params, signature }, secret, now)).toBe(true);
+  });
 });

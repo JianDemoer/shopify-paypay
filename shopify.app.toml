@@ -1,7 +1,7 @@
 name = "Omni Checkout"
 client_id = "d426756725347ec67cf72cd03948739d"
-application_url = "https://shopify-omni-checkout.vercel.app"
-embedded = true
+application_url = "https://shopify-omni-checkout.vercel.app/app"
+embedded = false
 
 [build]
 automatically_update_urls_on_dev = true

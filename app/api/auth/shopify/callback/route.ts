@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { ADMIN_SESSION_COOKIE, ADMIN_SESSION_MAX_AGE, createAdminSession } from '@/lib/admin-auth';
 import { saveShopifyInstallation } from '@/lib/store-configs';
 import { ensureAppUninstalledWebhook } from '@/lib/shopify-webhooks';
+import { getShopifyShopMetadata } from '@/lib/shopify-shop';
 import { normalizeShopDomain, requestedShopifyScopes, shopifyOAuthConfig, verifyShopifyCallbackHmac, verifyShopifyOAuthState } from '@/lib/shopify-oauth';
 
 export async function GET(request: NextRequest) {
@@ -30,33 +31,35 @@ export async function GET(request: NextRequest) {
       if (token.access_token) break;
     }
     if (!token?.access_token) return new Response(`Shopify token exchange failed: ${tokenStatus}`, { status: 502 });
-    await saveShopifyInstallation({ shopDomain: shop, accessToken: token.access_token, scopes: token.scope || requestedShopifyScopes() });
-    try {
-      await ensureAppUninstalledWebhook({
-        shopDomain: shop,
-        accessToken: token.access_token,
-        callbackUrl: `${config.appUrl}/api/webhooks/shopify`,
-      });
-    } catch (error) {
-      console.error('Shopify uninstall webhook registration failed:', error);
-    }
+    // Do not persist a long-lived Admin token unless uninstall revocation is
+    // operational. A retry is safer than leaving an untracked credential.
+    await ensureAppUninstalledWebhook({
+      shopDomain: shop,
+      accessToken: token.access_token,
+      callbackUrl: `${config.appUrl}/api/webhooks/shopify`,
+    });
+    const metadata = await getShopifyShopMetadata({ shopDomain: shop, accessToken: token.access_token });
+    await saveShopifyInstallation({
+      shopDomain: shop,
+      accessToken: token.access_token,
+      scopes: token.scope || requestedShopifyScopes(),
+      name: metadata.name,
+      currency: metadata.currency,
+    });
   } catch (error) {
     console.error('Shopify OAuth callback failed:', error);
     return new Response(error instanceof Error ? error.message : 'Shopify installation failed.', { status: 500 });
   }
-  const adminConfigEnabled = Boolean(process.env.ADMIN_CONFIG_TOKEN?.trim());
-  const destination = new URL(adminConfigEnabled ? '/admin/stores' : '/install', appUrl);
+  const destination = new URL('/admin/stores', appUrl);
   destination.searchParams.set('shop', shop);
   destination.searchParams.set('installed', '1');
   const response = NextResponse.redirect(destination);
-  if (adminConfigEnabled) {
-    response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSession(shop), {
-      httpOnly: true,
-      secure: destination.protocol === 'https:',
-      sameSite: 'lax',
-      path: '/',
-      maxAge: ADMIN_SESSION_MAX_AGE,
-    });
-  }
+  response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSession(shop), {
+    httpOnly: true,
+    secure: destination.protocol === 'https:',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: ADMIN_SESSION_MAX_AGE,
+  });
   return response;
 }

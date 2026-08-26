@@ -2,6 +2,7 @@ import type { StoreConfig } from './store-configs';
 import { getCheckoutSession, updateCheckoutSession, type CheckoutSession, type UpsellState } from './checkout-sessions';
 import { nextStepAfterDecision } from './funnel-runtime';
 import { recordCheckoutEvent } from './checkout-events';
+import { checkoutFinalizationDeadline, scheduleCheckoutFinalizationSafely } from './checkout-finalization-scheduler';
 
 export async function recordFunnelDecision(
   storeConfig: StoreConfig,
@@ -21,13 +22,15 @@ export async function recordFunnelDecision(
     paymentStatus: decision === 'declined' ? 'failed' : currentState?.paymentStatus,
   };
   const completedStepIds = [...new Set([...(session.completedStepIds || []), stepId])].slice(-100);
+  const finalizeAfter = checkoutFinalizationDeadline();
   const updated = await updateCheckoutSession(session.id, {
     upsellStates: { ...(session.upsellStates || {}), [stepId]: state },
     currentStepId: next?.id || stepId,
     completedStepIds,
     finalizationStatus: 'pending',
-    finalizeAfter: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    finalizeAfter,
   });
+  await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
   await recordCheckoutEvent({
     type: 'funnel_step_decision',
     storeId: session.storeId,

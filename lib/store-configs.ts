@@ -50,7 +50,11 @@ export class StoreConfigResolutionError extends Error {
 const DATA_DIR = process.env.CHECKOUT_SESSION_DATA_DIR || path.join(process.cwd(), '.data');
 const CONFIG_PATH = path.join(DATA_DIR, 'store-configs.json');
 const CONFIG_REDIS_KEY = 'omni_checkout:store_configs';
+const CONFIG_REDIS_LOCK_KEY = `${CONFIG_REDIS_KEY}:write_lock`;
 const { url: REDIS_URL, token: REDIS_TOKEN } = upstashRestConfig();
+const globalForStoreConfigs = globalThis as typeof globalThis & {
+  __storeConfigWriteTail?: Promise<void>;
+};
 
 function slug(value: string) {
   return value
@@ -147,6 +151,50 @@ async function redisCommand(command: unknown[]) {
   });
   if (!response.ok) throw new Error(`Upstash Redis error: ${response.status}`);
   return response.json();
+}
+
+function delay(milliseconds: number) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function withConfigWriteLock<T>(operation: () => Promise<T>): Promise<T> {
+  const previous = globalForStoreConfigs.__storeConfigWriteTail || Promise.resolve();
+  let releaseLocalLock = () => {};
+  const current = new Promise<void>((resolve) => {
+    releaseLocalLock = resolve;
+  });
+  globalForStoreConfigs.__storeConfigWriteTail = previous.catch(() => undefined).then(() => current);
+  await previous.catch(() => undefined);
+
+  let redisLockToken = '';
+  let redisLockAcquired = false;
+  try {
+    if (REDIS_URL && REDIS_TOKEN) {
+      redisLockToken = crypto.randomUUID();
+      const deadline = Date.now() + 10_000;
+      while (Date.now() < deadline) {
+        const result = await redisCommand(['SET', CONFIG_REDIS_LOCK_KEY, redisLockToken, 'NX', 'PX', 30_000]);
+        if (result?.result === 'OK') {
+          redisLockAcquired = true;
+          break;
+        }
+        await delay(100);
+      }
+      if (!redisLockAcquired) throw new Error('Store configuration is busy; retry the request');
+    }
+    return await operation();
+  } finally {
+    if (redisLockAcquired) {
+      await redisCommand([
+        'EVAL',
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+        1,
+        CONFIG_REDIS_LOCK_KEY,
+        redisLockToken,
+      ]).catch((error) => console.error('Store configuration lock release failed:', error));
+    }
+    releaseLocalLock();
+  }
 }
 
 function fallbackStore(): StoreConfig | null {
@@ -270,9 +318,10 @@ export async function getStoreConfig(storeIdOrDomain?: string | null): Promise<S
 }
 
 export async function saveStoreConfig(input: Partial<StoreConfig>) {
-  const configs = await readConfigFile();
-  const now = new Date().toISOString();
-  const shopDomain = normalizeDomain(input.shopDomain || '');
+  return withConfigWriteLock(async () => {
+    const configs = await readConfigFile();
+    const now = new Date().toISOString();
+    const shopDomain = normalizeDomain(input.shopDomain || '');
 
   if (!shopDomain || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(shopDomain)) {
     throw new Error('A valid shop domain is required');
@@ -327,8 +376,9 @@ export async function saveStoreConfig(input: Partial<StoreConfig>) {
     configs.push(config);
   }
 
-  await writeConfigFile(configs);
-  return config;
+    await writeConfigFile(configs);
+    return config;
+  });
 }
 
 export async function updateStoreRoutingConfig(input: {
@@ -336,69 +386,75 @@ export async function updateStoreRoutingConfig(input: {
   checkoutZones?: unknown;
   funnels?: unknown;
 }) {
-  const configs = await readConfigFile();
-  const index = configs.findIndex((item) => item.id === slug(input.storeId) || item.shopDomain === normalizeDomain(input.storeId));
-  if (index < 0) throw new StoreConfigResolutionError('Unknown store configuration');
-  const current = configs[index];
-  const updated: StoreConfig = {
-    ...current,
-    checkoutZones: normalizeCheckoutZones(input.checkoutZones ?? current.checkoutZones),
-    funnels: normalizeFunnelConfigs(input.funnels ?? current.funnels, {
-      variantId: current.upsellVariantId,
-      productId: current.upsellProductId,
-    }),
-    updatedAt: new Date().toISOString(),
-  };
-  configs[index] = updated;
-  await writeConfigFile(configs);
-  return updated;
+  return withConfigWriteLock(async () => {
+    const configs = await readConfigFile();
+    const index = configs.findIndex((item) => item.id === slug(input.storeId) || item.shopDomain === normalizeDomain(input.storeId));
+    if (index < 0) throw new StoreConfigResolutionError('Unknown store configuration');
+    const current = configs[index];
+    const updated: StoreConfig = {
+      ...current,
+      checkoutZones: normalizeCheckoutZones(input.checkoutZones ?? current.checkoutZones),
+      funnels: normalizeFunnelConfigs(input.funnels ?? current.funnels, {
+        variantId: current.upsellVariantId,
+        productId: current.upsellProductId,
+      }),
+      updatedAt: new Date().toISOString(),
+    };
+    configs[index] = updated;
+    await writeConfigFile(configs);
+    return updated;
+  });
 }
 
 export async function saveShopifyInstallation(input: {
   shopDomain: string;
   accessToken: string;
   scopes?: string;
+  name?: string;
+  currency?: string;
 }) {
-  const configs = await readConfigFile();
   const shopDomain = normalizeDomain(input.shopDomain);
   if (!shopDomain || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.myshopify\.com$/i.test(shopDomain)) {
     throw new Error('A valid myshopify.com shop domain is required');
   }
   if (!input.accessToken) throw new Error('Shopify access token is required');
-  const now = new Date().toISOString();
-  const index = configs.findIndex((config) => config.shopDomain === shopDomain);
-  const existing = index >= 0 ? configs[index] : undefined;
-  const config: StoreConfig = {
-    id: existing?.id || shopDomain,
-    name: existing?.name || shopDomain,
-    shopDomain,
-    currency: existing?.currency || 'USD',
-    storefrontAccessToken: existing?.storefrontAccessToken || '',
-    shopifyAdminAccessToken: input.accessToken,
-    shopifyAppProxySecret: process.env.SHOPIFY_APP_PROXY_SECRET || shopifyClientSecrets()[0] || existing?.shopifyAppProxySecret || '',
-    shopifyScopes: input.scopes?.trim() || existing?.shopifyScopes || '',
-    orderMode: existing?.orderMode || 'draft_order',
-    stripePublishableKey: existing?.stripePublishableKey || '',
-    stripeSecretKey: existing?.stripeSecretKey || '',
-    stripeWebhookSecret: existing?.stripeWebhookSecret || '',
-    stripeWebhookSecretProd: existing?.stripeWebhookSecretProd || '',
-    paypalClientId: existing?.paypalClientId || '',
-    paypalClientSecret: existing?.paypalClientSecret || '',
-    paypalEnv: existing?.paypalEnv || 'sandbox',
-    upsellProductId: existing?.upsellProductId || '',
-    upsellVariantId: existing?.upsellVariantId || '',
-    checkoutZones: existing?.checkoutZones || [],
-    funnels: existing?.funnels || [],
-    standardShipping: existing?.standardShipping ?? 3.99,
-    expressShipping: existing?.expressShipping ?? 5.99,
-    taxRate: existing?.taxRate ?? 0,
-    createdAt: existing?.createdAt || now,
-    updatedAt: now,
-  };
-  if (index >= 0) configs[index] = config;
-  else configs.push(config);
-  await writeConfigFile(configs);
-  return config;
+  return withConfigWriteLock(async () => {
+    const configs = await readConfigFile();
+    const now = new Date().toISOString();
+    const index = configs.findIndex((config) => config.shopDomain === shopDomain);
+    const existing = index >= 0 ? configs[index] : undefined;
+    const config: StoreConfig = {
+      id: existing?.id || shopDomain,
+      name: input.name?.trim() || existing?.name || shopDomain,
+      shopDomain,
+      currency: normalizeCurrency(input.currency || existing?.currency),
+      storefrontAccessToken: existing?.storefrontAccessToken || '',
+      shopifyAdminAccessToken: input.accessToken,
+      shopifyAppProxySecret: process.env.SHOPIFY_APP_PROXY_SECRET || shopifyClientSecrets()[0] || existing?.shopifyAppProxySecret || '',
+      shopifyScopes: input.scopes?.trim() || existing?.shopifyScopes || '',
+      orderMode: existing?.orderMode || 'draft_order',
+      stripePublishableKey: existing?.stripePublishableKey || '',
+      stripeSecretKey: existing?.stripeSecretKey || '',
+      stripeWebhookSecret: existing?.stripeWebhookSecret || '',
+      stripeWebhookSecretProd: existing?.stripeWebhookSecretProd || '',
+      paypalClientId: existing?.paypalClientId || '',
+      paypalClientSecret: existing?.paypalClientSecret || '',
+      paypalEnv: existing?.paypalEnv || 'sandbox',
+      upsellProductId: existing?.upsellProductId || '',
+      upsellVariantId: existing?.upsellVariantId || '',
+      checkoutZones: existing?.checkoutZones || [],
+      funnels: existing?.funnels || [],
+      standardShipping: existing?.standardShipping ?? 3.99,
+      expressShipping: existing?.expressShipping ?? 5.99,
+      taxRate: existing?.taxRate ?? 0,
+      createdAt: existing?.createdAt || now,
+      updatedAt: now,
+    };
+    if (index >= 0) configs[index] = config;
+    else configs.push(config);
+    await writeConfigFile(configs);
+    return config;
+  });
 }
 
 /**
@@ -407,27 +463,31 @@ export async function saveShopifyInstallation(input: {
  * install repopulates these fields for the same store domain.
  */
 export async function revokeShopifyInstallation(shopDomain: string) {
-  const configs = await readConfigFile();
-  const normalizedDomain = normalizeDomain(shopDomain);
-  const index = configs.findIndex((config) => config.shopDomain === normalizedDomain);
-  if (index < 0) return false;
+  return withConfigWriteLock(async () => {
+    const configs = await readConfigFile();
+    const normalizedDomain = normalizeDomain(shopDomain);
+    const index = configs.findIndex((config) => config.shopDomain === normalizedDomain);
+    if (index < 0) return false;
 
-  const current = configs[index];
-  configs[index] = {
-    ...current,
-    storefrontAccessToken: '',
-    shopifyAdminAccessToken: '',
-    shopifyAppProxySecret: '',
-    shopifyScopes: '',
-    updatedAt: new Date().toISOString(),
-  };
-  await writeConfigFile(configs);
-  return true;
+    const current = configs[index];
+    configs[index] = {
+      ...current,
+      storefrontAccessToken: '',
+      shopifyAdminAccessToken: '',
+      shopifyAppProxySecret: '',
+      shopifyScopes: '',
+      updatedAt: new Date().toISOString(),
+    };
+    await writeConfigFile(configs);
+    return true;
+  });
 }
 
 export async function deleteStoreConfig(id: string) {
-  const configs = await readConfigFile();
-  const normalized = slug(id);
-  const normalizedDomain = normalizeDomain(id);
-  await writeConfigFile(configs.filter((item) => item.id !== normalized && item.shopDomain !== normalizedDomain));
+  return withConfigWriteLock(async () => {
+    const configs = await readConfigFile();
+    const normalized = slug(id);
+    const normalizedDomain = normalizeDomain(id);
+    await writeConfigFile(configs.filter((item) => item.id !== normalized && item.shopDomain !== normalizedDomain));
+  });
 }

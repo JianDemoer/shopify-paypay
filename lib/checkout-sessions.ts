@@ -109,7 +109,7 @@ const DATA_DIR = process.env.CHECKOUT_SESSION_DATA_DIR || path.join(process.cwd(
 const FILE_STORE_PATH = path.join(DATA_DIR, 'checkout-sessions.json');
 const { url: UPSTASH_URL, token: UPSTASH_TOKEN } = upstashRestConfig();
 const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60;
-const CHECKOUT_ACCESS_TTL_SECONDS = 30 * 60;
+const CHECKOUT_ACCESS_TTL_SECONDS = 2 * 60 * 60;
 
 function makeId(prefix: string) {
   return `${prefix}_${Date.now().toString(36)}_${crypto.randomBytes(8).toString('hex')}`;

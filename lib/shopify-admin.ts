@@ -13,6 +13,49 @@ function adminUrl(storeConfig: StoreConfig, resource: string) {
   return `https://${storeConfig.shopDomain}/admin/api/${SHOPIFY_ADMIN_API_VERSION}/${resource}`;
 }
 
+async function adminGraphql<T>(
+  storeConfig: StoreConfig,
+  query: string,
+  variables: Record<string, unknown>,
+  operation: string
+): Promise<T> {
+  const response = await fetch(adminUrl(storeConfig, 'graphql.json'), {
+    method: 'POST',
+    headers: {
+      'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query, variables }),
+    cache: 'no-store',
+  });
+  if (!response.ok) throw new Error(`${operation} failed: ${response.status}`);
+  const payload = await response.json();
+  if (payload.errors?.length) {
+    throw new Error(`${operation} failed: ${payload.errors.map((error: any) => error.message || 'Unknown GraphQL error').join('; ')}`);
+  }
+  return payload.data as T;
+}
+
+function assertNoUserErrors(errors: Array<{ field?: string[]; message?: string }> | undefined, operation: string) {
+  if (!errors?.length) return;
+  throw new Error(`${operation} failed: ${errors.map((error) => error.message || error.field?.join('.') || 'Unknown user error').join('; ')}`);
+}
+
+function resourceGid(resource: 'DraftOrder' | 'Order', id: string) {
+  if (id.startsWith(`gid://shopify/${resource}/`)) return id;
+  if (/^\d+$/.test(id)) return `gid://shopify/${resource}/${id}`;
+  throw new Error(`Invalid Shopify ${resource} id`);
+}
+
+function numericOrderNumber(name: unknown) {
+  const match = String(name || '').match(/\d+/);
+  return match ? Number(match[0]) : 0;
+}
+
+function money(amount: number, currencyCode: string) {
+  return { amount: Number(amount || 0).toFixed(2), currencyCode };
+}
+
 export interface LineItem {
   variantId: string;
   productId?: string;
@@ -55,10 +98,6 @@ export interface OrderData {
   utm?: Record<string, string>;
 }
 
-function restVariantId(variantId: string) {
-  return variantId.includes('gid://') ? variantId.split('/').pop() || variantId : variantId;
-}
-
 function variantGid(variantId: string) {
   if (variantId.startsWith('gid://shopify/ProductVariant/')) return variantId;
   if (/^\d+$/.test(variantId)) return `gid://shopify/ProductVariant/${variantId}`;
@@ -66,12 +105,8 @@ function variantGid(variantId: string) {
 }
 
 function hasTag(tags: unknown, expected: string) {
-  return String(tags || '').split(',').map((tag) => tag.trim()).includes(expected);
-}
-
-function nextPageUrl(linkHeader: string | null) {
-  const nextLink = linkHeader?.split(',').find((part) => part.includes('rel="next"'));
-  return nextLink?.match(/<([^>]+)>/)?.[1] || null;
+  const values = Array.isArray(tags) ? tags : String(tags || '').split(',');
+  return values.map((tag) => String(tag).trim()).includes(expected);
 }
 
 export async function resolveCheckoutLineItems(
@@ -153,50 +188,36 @@ async function checkOrderByPaymentIntentId(
   storeConfig: StoreConfig,
   paymentIntentId: string
 ): Promise<any | null> {
-  try {
-    let url: string | null = adminUrl(storeConfig, 'orders.json') + '?status=any&limit=250&fields=id,order_number,tags,financial_status';
-    while (url) {
-      const response = await fetch(url, {
-        headers: {
-          'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-      });
+  return findShopifyOrderByTag(storeConfig, `payment_intent:${paymentIntentId}`);
+}
 
-      if (!response.ok) throw new Error(`Shopify API error: ${response.status}`);
-
-      const { orders } = await response.json();
-      const existingOrder = orders?.find((order: any) => hasTag(order.tags, `payment_intent:${paymentIntentId}`));
-      if (existingOrder) return existingOrder;
-      url = nextPageUrl(response.headers.get('link'));
+export async function findShopifyOrderByTag(storeConfig: StoreConfig, expectedTag: string) {
+  if (!expectedTag || expectedTag.length > 255) throw new Error('Invalid Shopify order tag');
+  const data = await adminGraphql<{
+    orders?: { nodes?: Array<{ id: string; name?: string; tags?: string[] }> };
+  }>(storeConfig, `query OrderByPayment($query: String!) {
+    orders(first: 10, query: $query, reverse: true) {
+      nodes { id name tags }
     }
-    return null;
-  } catch (error) {
-    console.error('Error checking order by payment intent:', error);
-    throw error;
-  }
+  }`, { query: `tag:${JSON.stringify(expectedTag)}` }, 'Shopify order lookup');
+  const existing = data.orders?.nodes?.find((order) => hasTag(order.tags, expectedTag));
+  return existing ? { ...existing, order_number: numericOrderNumber(existing.name) } : null;
 }
 
 async function findDraftOrderByKey(
   storeConfig: StoreConfig,
   draftKey: string
 ): Promise<{ id: string; invoice_url?: string } | null> {
-  let url: string | null = adminUrl(storeConfig, 'draft_orders.json') + '?status=any&limit=250&fields=id,invoice_url,tags,status';
-  while (url) {
-    const response = await fetch(url, {
-      headers: {
-        'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) throw new Error(`Shopify draft order lookup failed: ${response.status}`);
-
-    const { draft_orders: existingDrafts } = await response.json();
-    const existing = existingDrafts?.find((draft: any) => hasTag(draft.tags, `draft_key:${draftKey}`));
-    if (existing) return { id: String(existing.id), invoice_url: existing.invoice_url };
-    url = nextPageUrl(response.headers.get('link'));
-  }
-  return null;
+  const expectedTag = `draft_key:${draftKey}`;
+  const data = await adminGraphql<{
+    draftOrders?: { nodes?: Array<{ id: string; invoiceUrl?: string; tags?: string[] }> };
+  }>(storeConfig, `query DraftOrderByKey($query: String!) {
+    draftOrders(first: 10, query: $query, reverse: true) {
+      nodes { id invoiceUrl tags }
+    }
+  }`, { query: `tag:${JSON.stringify(expectedTag)}` }, 'Shopify draft order lookup');
+  const existing = data.draftOrders?.nodes?.find((draft) => hasTag(draft.tags, expectedTag));
+  return existing ? { id: existing.id, invoice_url: existing.invoiceUrl } : null;
 }
 
 /**
@@ -238,15 +259,16 @@ export async function createShopifyOrder(
     }
 
     try {
-    // STEP 2: Create new order with inventory tracking
-    const lineItemsPayload = orderData.lineItems.map((item) => {
-      return {
-        variant_id: restVariantId(item.variantId),
-        quantity: item.quantity,
-        title: item.title,
-        price: item.price,
-      };
-    });
+    const currency = orderData.storeConfig.currency;
+    const lineItemsPayload = orderData.lineItems.map((item) => ({
+      variantId: variantGid(item.variantId),
+      ...(item.productId ? { productId: item.productId } : {}),
+      quantity: item.quantity,
+      title: item.title,
+      priceSet: { shopMoney: money(Number(item.price || 0), currency) },
+      requiresShipping: true,
+      taxable: true,
+    }));
 
     // Use provided names or fallback to defaults
     const firstName = orderData.firstName || 'Guest';
@@ -259,103 +281,87 @@ export async function createShopifyOrder(
       orderData.parentPaymentIntentId ? `parent_payment:${orderData.parentPaymentIntentId}` : '',
       orderData.cartId ? `checkout_session:${orderData.cartId}` : '',
       orderData.cid ? `cid:${orderData.cid}` : '',
-    ].filter(Boolean).join(', ');
+    ].filter(Boolean);
 
     const noteAttributes = [
-      { name: 'payment_intent_id', value: orderData.paymentIntentId },
-      { name: 'parent_payment_intent_id', value: orderData.parentPaymentIntentId || '' },
-      { name: 'order_type', value: orderData.orderType || 'checkout' },
-      { name: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
-      { name: 'cid', value: orderData.cid || '' },
-      { name: 'source_url', value: orderData.sourceUrl || '' },
-      { name: 'shipping_method', value: orderData.shippingMethod || '' },
-      { name: 'utm_source', value: orderData.utm?.source || '' },
-      { name: 'utm_campaign', value: orderData.utm?.campaign || '' },
-      { name: 'utm_medium', value: orderData.utm?.medium || '' },
-      { name: 'utm_content', value: orderData.utm?.content || '' },
-      { name: 'utm_term', value: orderData.utm?.term || '' },
+      { key: 'payment_intent_id', value: orderData.paymentIntentId },
+      { key: 'parent_payment_intent_id', value: orderData.parentPaymentIntentId || '' },
+      { key: 'order_type', value: orderData.orderType || 'checkout' },
+      { key: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
+      { key: 'cid', value: orderData.cid || '' },
+      { key: 'source_url', value: orderData.sourceUrl || '' },
+      { key: 'shipping_method', value: orderData.shippingMethod || '' },
+      { key: 'utm_source', value: orderData.utm?.source || '' },
+      { key: 'utm_campaign', value: orderData.utm?.campaign || '' },
+      { key: 'utm_medium', value: orderData.utm?.medium || '' },
+      { key: 'utm_content', value: orderData.utm?.content || '' },
+      { key: 'utm_term', value: orderData.utm?.term || '' },
     ].filter((attribute) => attribute.value);
-
-    const response = await fetch(
-      adminUrl(orderData.storeConfig, 'orders.json'),
-      {
-        method: 'POST',
-        headers: {
-          'X-Shopify-Access-Token': orderData.storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          order: {
-            email: orderData.email,
-            financial_status: 'paid',
-            fulfillment_status: 'unfulfilled',
-            
-            // Tag with payment intent ID during creation (single API call)
-            tags,
-            note_attributes: noteAttributes,
-
-            // Customer data with name and address
-            customer: {
-              first_name: firstName,
-              last_name: lastName,
-              email: orderData.email,
-            },
-
-            // Line items
-            line_items: lineItemsPayload,
-
-            // Shipping address
-            shipping_address: {
-              first_name: firstName,
-              last_name: lastName,
-              address1: orderData.shippingAddress.address1,
-              address2: orderData.shippingAddress.address2 || '',
-              city: orderData.shippingAddress.city,
-              province: orderData.shippingAddress.province || '',
-              zip: orderData.shippingAddress.zip,
-              country: orderData.shippingAddress.country,
-              phone: orderData.shippingAddress.phone || '',
-            },
-
-            ...(orderData.shippingPrice && orderData.shippingPrice > 0
-              ? {
-                  shipping_lines: [{
-                    title: orderData.shippingMethod === 'express' ? 'Express Shipping' : 'Standard Shipping',
-                    price: orderData.shippingPrice.toFixed(2),
-                    code: orderData.shippingMethod || 'standard',
-                  }],
-                }
-              : {}),
-            ...(orderData.taxPrice && orderData.taxPrice > 0
-              ? {
-                  tax_lines: [{
-                    title: 'Tax',
-                    price: orderData.taxPrice.toFixed(2),
-                    rate: orderData.taxRate || 0,
-                  }],
-                }
-              : {}),
-
-            // Decrement inventory in real-time for demo visibility
-            inventory_behavior: 'decrement_ignoring_policy',
-          },
-        }),
+    const itemSubtotal = orderData.lineItems.reduce((sum, item) => sum + Number(item.price || 0) * item.quantity, 0);
+    const total = Number((itemSubtotal + Number(orderData.shippingPrice || 0) + Number(orderData.taxPrice || 0)).toFixed(2));
+    const orderInput = {
+      email: orderData.email,
+      financialStatus: 'PAID',
+      fulfillmentStatus: 'UNFULFILLED',
+      currency,
+      presentmentCurrency: currency,
+      tags,
+      customAttributes: noteAttributes,
+      lineItems: lineItemsPayload,
+      shippingAddress: {
+        firstName,
+        lastName,
+        address1: orderData.shippingAddress.address1,
+        address2: orderData.shippingAddress.address2 || '',
+        city: orderData.shippingAddress.city,
+        province: orderData.shippingAddress.province || '',
+        zip: orderData.shippingAddress.zip,
+        country: orderData.shippingAddress.country,
+        phone: orderData.shippingAddress.phone || '',
+      },
+      ...(orderData.shippingPrice && orderData.shippingPrice > 0
+        ? { shippingLines: [{
+            title: orderData.shippingMethod === 'express' ? 'Express Shipping' : 'Standard Shipping',
+            code: orderData.shippingMethod || 'standard',
+            source: 'Omni Checkout',
+            priceSet: { shopMoney: money(orderData.shippingPrice, currency) },
+          }] }
+        : {}),
+      ...(orderData.taxPrice && orderData.taxPrice > 0
+        ? { taxLines: [{
+            title: 'Tax',
+            rate: Number(orderData.taxRate || 0),
+            priceSet: { shopMoney: money(orderData.taxPrice, currency) },
+          }] }
+        : {}),
+      transactions: [{
+        kind: 'SALE',
+        status: 'SUCCESS',
+        gateway: orderData.paymentIntentId.startsWith('paypal:') ? 'PayPal' : 'Stripe',
+        authorizationCode: orderData.paymentIntentId,
+        amountSet: { shopMoney: money(total, currency) },
+      }],
+    };
+    const data = await adminGraphql<{
+      orderCreate?: {
+        order?: { id: string; name?: string; tags?: string[] };
+        userErrors?: Array<{ field?: string[]; message?: string }>;
+      };
+    }>(orderData.storeConfig, `mutation CreateOrder($order: OrderCreateOrderInput!, $options: OrderCreateOptionsInput) {
+      orderCreate(order: $order, options: $options) {
+        order { id name tags }
+        userErrors { field message }
       }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Shopify order creation error:', error);
-      throw new Error(`Shopify API error: ${response.status}`);
-    }
-
-    const { order } = await response.json();
-
-    console.log(`✅ Order created: #${order.order_number} (ID: ${order.id}) with tags: ${order.tags}`);
-
+    }`, {
+      order: orderInput,
+      options: { inventoryBehaviour: 'DECREMENT_IGNORING_POLICY', sendReceipt: false },
+    }, 'Shopify order creation');
+    assertNoUserErrors(data.orderCreate?.userErrors, 'Shopify order creation');
+    const order = data.orderCreate?.order;
+    if (!order?.id) throw new Error('Shopify order creation returned no order');
     return {
       id: order.id,
-      order_number: order.order_number,
+      order_number: numericOrderNumber(order.name),
     };
     } finally {
       await releaseCheckoutLock(lockKey, lockToken);
@@ -367,7 +373,7 @@ export async function createShopifyOrder(
 }
 
 export async function createShopifyDraftOrder(
-  orderData: Omit<OrderData, 'paymentIntentId'> & { draftKey: string; shippingPrice?: number }
+  orderData: Omit<OrderData, 'paymentIntentId'> & { draftKey: string; shippingPrice?: number; taxPrice?: number }
 ): Promise<{ id: string; invoice_url?: string }> {
   const existing = await findDraftOrderByKey(orderData.storeConfig, orderData.draftKey);
   if (existing) return existing;
@@ -384,48 +390,49 @@ export async function createShopifyDraftOrder(
   try {
     const firstName = orderData.firstName || 'Guest';
     const lastName = orderData.lastName || 'Customer';
-    const lineItemsPayload = orderData.lineItems.map((item) => ({
-      variant_id: restVariantId(item.variantId),
+    const lineItemsPayload: Array<Record<string, unknown>> = orderData.lineItems.map((item) => ({
+      variantId: variantGid(item.variantId),
       quantity: item.quantity,
-      title: item.title,
-      price: item.price,
+      ...(Number.isFinite(item.price)
+        ? { priceOverride: money(Number(item.price), orderData.storeConfig.currency) }
+        : {}),
     }));
+    if (orderData.taxPrice && orderData.taxPrice > 0) {
+      lineItemsPayload.push({
+        title: 'Tax',
+        quantity: 1,
+        originalUnitPriceWithCurrency: money(orderData.taxPrice, orderData.storeConfig.currency),
+        taxable: false,
+        requiresShipping: false,
+      });
+    }
 
-    const response = await fetch(
-      adminUrl(orderData.storeConfig, 'draft_orders.json'),
-      {
-        method: 'POST',
-        headers: {
-          'X-Shopify-Access-Token': orderData.storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          draft_order: {
+    const input = {
           email: orderData.email,
           tags: [
             'OPC-Draft',
             `draft_key:${orderData.draftKey}`,
             orderData.cartId ? `checkout_session:${orderData.cartId}` : '',
             orderData.cid ? `cid:${orderData.cid}` : '',
-          ].filter(Boolean).join(', '),
-          note_attributes: [
-            { name: 'draft_key', value: orderData.draftKey },
-            { name: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
-            { name: 'cid', value: orderData.cid || '' },
-            { name: 'source_url', value: orderData.sourceUrl || '' },
+          ].filter(Boolean),
+          customAttributes: [
+            { key: 'draft_key', value: orderData.draftKey },
+            { key: 'checkout_session_id', value: orderData.checkoutSessionId || orderData.cartId || '' },
+            { key: 'cid', value: orderData.cid || '' },
+            { key: 'source_url', value: orderData.sourceUrl || '' },
           ].filter((attribute) => attribute.value),
-          line_items: lineItemsPayload,
+          lineItems: lineItemsPayload,
           ...(orderData.shippingPrice && orderData.shippingPrice > 0
             ? {
-                shipping_line: {
+                shippingLine: {
                   title: orderData.shippingMethod === 'express' ? 'Express Shipping' : 'Standard Shipping',
-                  price: orderData.shippingPrice.toFixed(2),
+                  priceWithCurrency: money(orderData.shippingPrice, orderData.storeConfig.currency),
                 },
               }
             : {}),
-          shipping_address: {
-            first_name: firstName,
-            last_name: lastName,
+          shippingAddress: {
+            firstName,
+            lastName,
             address1: orderData.shippingAddress.address1,
             address2: orderData.shippingAddress.address2 || '',
             city: orderData.shippingAddress.city,
@@ -434,27 +441,27 @@ export async function createShopifyDraftOrder(
             country: orderData.shippingAddress.country,
             phone: orderData.shippingAddress.phone || '',
           },
-          customer: {
-            first_name: firstName,
-            last_name: lastName,
-            email: orderData.email,
-          },
-          use_customer_default_address: false,
-          },
-        }),
+          presentmentCurrencyCode: orderData.storeConfig.currency,
+          taxExempt: true,
+          useCustomerDefaultAddress: false,
+        };
+    const data = await adminGraphql<{
+      draftOrderCreate?: {
+        draftOrder?: { id: string; invoiceUrl?: string };
+        userErrors?: Array<{ field?: string[]; message?: string }>;
+      };
+    }>(orderData.storeConfig, `mutation CreateDraftOrder($input: DraftOrderInput!) {
+      draftOrderCreate(input: $input) {
+        draftOrder { id invoiceUrl }
+        userErrors { field message }
       }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Shopify draft order creation error:', error);
-      throw new Error(`Shopify Draft Order API error: ${response.status}`);
-    }
-
-    const { draft_order } = await response.json();
+    }`, { input }, 'Shopify draft order creation');
+    assertNoUserErrors(data.draftOrderCreate?.userErrors, 'Shopify draft order creation');
+    const draftOrder = data.draftOrderCreate?.draftOrder;
+    if (!draftOrder?.id) throw new Error('Shopify draft order creation returned no draft order');
     return {
-      id: String(draft_order.id),
-      invoice_url: draft_order.invoice_url,
+      id: draftOrder.id,
+      invoice_url: draftOrder.invoiceUrl,
     };
   } finally {
     await releaseCheckoutLock(lockKey, lockToken);
@@ -471,6 +478,7 @@ export async function updateShopifyDraftOrder(input: {
   shippingAddress: ShippingAddress;
   shippingMethod?: string;
   shippingPrice?: number;
+  taxPrice?: number;
   checkoutSessionId?: string;
   cid?: string;
   sourceUrl?: string;
@@ -482,50 +490,51 @@ export async function updateShopifyDraftOrder(input: {
   if (!lockToken) throw new Error('Draft order update is already in progress');
 
   try {
-    const lineItems = input.lineItems.map((item) => ({
-      variant_id: restVariantId(item.variantId),
+    const lineItems: Array<Record<string, unknown>> = input.lineItems.map((item) => ({
+      variantId: variantGid(item.variantId),
       quantity: item.quantity,
-      title: item.title,
-      price: Number(item.price || 0).toFixed(2),
+      ...(Number.isFinite(item.price)
+        ? { priceOverride: money(Number(item.price), input.storeConfig.currency) }
+        : {}),
     }));
+    if (input.taxPrice && input.taxPrice > 0) {
+      lineItems.push({
+        title: 'Tax',
+        quantity: 1,
+        originalUnitPriceWithCurrency: money(input.taxPrice, input.storeConfig.currency),
+        taxable: false,
+        requiresShipping: false,
+      });
+    }
     const tags = [
       'OPC-Draft',
       'OPC-Bundled',
       input.checkoutSessionId ? `checkout_session:${input.checkoutSessionId}` : '',
       input.cid ? `cid:${input.cid}` : '',
       ...(input.tags || []),
-    ].filter(Boolean).join(', ');
+    ].filter(Boolean);
     const noteAttributes = [
-      { name: 'checkout_session_id', value: input.checkoutSessionId || '' },
-      { name: 'cid', value: input.cid || '' },
-      { name: 'source_url', value: input.sourceUrl || '' },
-      ...(input.noteAttributes || []),
+      { key: 'checkout_session_id', value: input.checkoutSessionId || '' },
+      { key: 'cid', value: input.cid || '' },
+      { key: 'source_url', value: input.sourceUrl || '' },
+      ...(input.noteAttributes || []).map((attribute) => ({ key: attribute.name, value: attribute.value })),
     ].filter((attribute) => attribute.value);
-    const response = await fetch(
-      adminUrl(input.storeConfig, `draft_orders/${encodeURIComponent(input.draftOrderId)}.json`),
-      {
-        method: 'PUT',
-        headers: {
-          'X-Shopify-Access-Token': input.storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          draft_order: {
+    const draftInput = {
             email: input.email,
             tags,
-            note_attributes: noteAttributes,
-            line_items: lineItems,
+            customAttributes: noteAttributes,
+            lineItems,
             ...(input.shippingPrice && input.shippingPrice > 0
               ? {
-                  shipping_line: {
+                  shippingLine: {
                     title: input.shippingMethod === 'express' ? 'Express Shipping' : 'Standard Shipping',
-                    price: input.shippingPrice.toFixed(2),
+                    priceWithCurrency: money(input.shippingPrice, input.storeConfig.currency),
                   },
                 }
-              : { shipping_line: null }),
-            shipping_address: {
-              first_name: input.firstName,
-              last_name: input.lastName,
+              : {}),
+            shippingAddress: {
+              firstName: input.firstName,
+              lastName: input.lastName,
               address1: input.shippingAddress.address1,
               address2: input.shippingAddress.address2 || '',
               city: input.shippingAddress.city,
@@ -534,23 +543,25 @@ export async function updateShopifyDraftOrder(input: {
               country: input.shippingAddress.country,
               phone: input.shippingAddress.phone || '',
             },
-            customer: {
-              first_name: input.firstName,
-              last_name: input.lastName,
-              email: input.email,
-            },
-            use_customer_default_address: false,
-          },
-        }),
+            presentmentCurrencyCode: input.storeConfig.currency,
+            taxExempt: true,
+            useCustomerDefaultAddress: false,
+          };
+    const data = await adminGraphql<{
+      draftOrderUpdate?: {
+        draftOrder?: { id: string; invoiceUrl?: string; status?: string };
+        userErrors?: Array<{ field?: string[]; message?: string }>;
+      };
+    }>(input.storeConfig, `mutation UpdateDraftOrder($id: ID!, $input: DraftOrderInput!) {
+      draftOrderUpdate(id: $id, input: $input) {
+        draftOrder { id invoiceUrl status }
+        userErrors { field message }
       }
-    );
-    if (!response.ok) {
-      const error = await response.text();
-      console.error('Shopify draft order update error:', error);
-      throw new Error(`Shopify Draft Order update error: ${response.status}`);
-    }
-    const { draft_order: draftOrder } = await response.json();
-    return { id: String(draftOrder.id || input.draftOrderId), invoice_url: draftOrder.invoice_url, status: draftOrder.status };
+    }`, { id: resourceGid('DraftOrder', input.draftOrderId), input: draftInput }, 'Shopify draft order update');
+    assertNoUserErrors(data.draftOrderUpdate?.userErrors, 'Shopify draft order update');
+    const draftOrder = data.draftOrderUpdate?.draftOrder;
+    if (!draftOrder?.id) throw new Error('Shopify draft order update returned no draft order');
+    return { id: draftOrder.id, invoice_url: draftOrder.invoiceUrl, status: draftOrder.status };
   } finally {
     await releaseCheckoutLock(lockKey, lockToken);
   }
@@ -560,23 +571,21 @@ export async function completeShopifyDraftOrder(input: {
   storeConfig: StoreConfig;
   draftOrderId: string;
 }): Promise<{ id: string; order_number: number }> {
-  const draftUrl = adminUrl(input.storeConfig, `draft_orders/${encodeURIComponent(input.draftOrderId)}.json`);
+  const draftId = resourceGid('DraftOrder', input.draftOrderId);
   const readDraft = async () => {
-    const response = await fetch(draftUrl, {
-      headers: {
-        'X-Shopify-Access-Token': input.storeConfig.shopifyAdminAccessToken,
-        'Content-Type': 'application/json',
-      },
-    });
-    if (!response.ok) throw new Error(`Shopify draft order lookup failed: ${response.status}`);
-    return (await response.json()).draft_order;
+    const data = await adminGraphql<{
+      draftOrder?: { id: string; status?: string; order?: { id: string; name?: string } };
+    }>(input.storeConfig, `query DraftOrderStatus($id: ID!) {
+      draftOrder(id: $id) { id status order { id name } }
+    }`, { id: draftId }, 'Shopify draft order lookup');
+    return data.draftOrder;
   };
 
   const completedOrder = (draft: any) => {
-    if (draft?.status === 'completed' && draft.order_id) {
+    if (draft?.status === 'COMPLETED' && draft.order?.id) {
       return {
-        id: String(draft.order_id),
-        order_number: draft.order_number || 0,
+        id: draft.order.id,
+        order_number: numericOrderNumber(draft.order.name),
       };
     }
     return null;
@@ -600,28 +609,23 @@ export async function completeShopifyDraftOrder(input: {
     const latestOrder = completedOrder(latestDraft);
     if (latestOrder) return latestOrder;
 
-    const response = await fetch(
-      adminUrl(input.storeConfig, `draft_orders/${encodeURIComponent(input.draftOrderId)}/complete.json`),
-      {
-        method: 'PUT',
-        headers: {
-          'X-Shopify-Access-Token': input.storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ payment_pending: false }),
+    const data = await adminGraphql<{
+      draftOrderComplete?: {
+        draftOrder?: { id: string; status?: string; order?: { id: string; name?: string } };
+        userErrors?: Array<{ field?: string[]; message?: string }>;
+      };
+    }>(input.storeConfig, `mutation CompleteDraftOrder($id: ID!) {
+      draftOrderComplete(id: $id, paymentPending: false) {
+        draftOrder { id status order { id name } }
+        userErrors { field message }
       }
-    );
-
-    if (!response.ok) {
-      const error = await response.json();
-      console.error('Shopify draft order completion error:', error);
-      throw new Error(`Shopify Draft Order complete error: ${response.status}`);
-    }
-
-    const { draft_order } = await response.json();
+    }`, { id: draftId }, 'Shopify draft order completion');
+    assertNoUserErrors(data.draftOrderComplete?.userErrors, 'Shopify draft order completion');
+    const order = data.draftOrderComplete?.draftOrder?.order;
+    if (!order?.id) throw new Error('Shopify draft order completion returned no order');
     return {
-      id: String(draft_order.order_id || draft_order.id),
-      order_number: draft_order.order_number || 0,
+      id: order.id,
+      order_number: numericOrderNumber(order.name),
     };
   } finally {
     await releaseCheckoutLock(lockKey, lockToken);
@@ -632,25 +636,11 @@ export async function completeShopifyDraftOrder(input: {
  * Get order details from Shopify (for verification)
  */
 export async function getShopifyOrder(storeConfig: StoreConfig, orderId: string): Promise<any> {
-  try {
-    const response = await fetch(
-      adminUrl(storeConfig, `orders/${encodeURIComponent(orderId)}.json`),
-      {
-        headers: {
-          'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
-          'Content-Type': 'application/json',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`Shopify API error: ${response.status}`);
-    }
-
-    const { order } = await response.json();
-    return order;
-  } catch (error) {
-    console.error('Error fetching Shopify order:', error);
-    throw error;
-  }
+  const data = await adminGraphql<{
+    order?: { id: string; name?: string; tags?: string[]; displayFinancialStatus?: string };
+  }>(storeConfig, `query ShopifyOrder($id: ID!) {
+    order(id: $id) { id name tags displayFinancialStatus }
+  }`, { id: resourceGid('Order', orderId) }, 'Shopify order lookup');
+  if (!data.order) throw new Error('Shopify order was not found');
+  return { ...data.order, order_number: numericOrderNumber(data.order.name) };
 }

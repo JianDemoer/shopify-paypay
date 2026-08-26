@@ -70,6 +70,7 @@ export async function POST(request: NextRequest) {
         utm: normalizeUtm(session.utm),
         draftKey: `${session.id}:main`,
         shippingPrice: totals.shipping,
+        taxPrice: totals.tax,
       });
       draftOrderId = draft.id;
     }

@@ -10,12 +10,14 @@ function authorized(request: NextRequest) {
   return authorization === `Bearer ${expected}`;
 }
 
-export async function GET(request: NextRequest) {
+async function finalizeDueCheckouts(request: NextRequest) {
   if (!authorized(request)) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   const configs = await listStoreConfigs();
   const configMap = new Map(configs.map((config) => [config.id, config]));
   const now = Date.now();
+  const requestedSessionId = request.nextUrl.searchParams.get('session_id') || '';
   const candidates = (await listCheckoutSessions()).filter((session) => {
+    if (requestedSessionId && session.id !== requestedSessionId) return false;
     return session.primaryPaymentStatus === 'paid'
       && session.finalizationStatus !== 'completed'
       && session.finalizeAfter
@@ -36,4 +38,12 @@ export async function GET(request: NextRequest) {
     }
   }
   return NextResponse.json({ processed: results.length, results });
+}
+
+export async function GET(request: NextRequest) {
+  return finalizeDueCheckouts(request);
+}
+
+export async function POST(request: NextRequest) {
+  return finalizeDueCheckouts(request);
 }

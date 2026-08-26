@@ -5,6 +5,7 @@ import { nextStepAfterDecision, sessionFunnelVersion } from './funnel-runtime';
 import { finalizeCheckoutSession, paymentMethodId } from './order-finalization';
 import type { StoreConfig } from './store-configs';
 import { recordCheckoutEvent } from './checkout-events';
+import { checkoutFinalizationDeadline, scheduleCheckoutFinalizationSafely } from './checkout-finalization-scheduler';
 
 function nextCompletedSteps(session: CheckoutSession, stepId: string) {
   return [...new Set([...(session.completedStepIds || []), stepId])].slice(-100);
@@ -35,6 +36,7 @@ export async function processStripePaymentSucceeded(paymentIntent: Stripe.Paymen
     const version = sessionFunnelVersion(storeConfig, session);
     const entryStepId = version?.entryStepId || session.currentStepId || '';
     const next = version && entryStepId ? nextStepAfterDecision(storeConfig, session, 'accepted', entryStepId) : undefined;
+    const finalizeAfter = checkoutFinalizationDeadline();
     const updated = await updateCheckoutSession(session.id, {
       primaryPaymentId: paymentIntent.id,
       primaryPaymentStatus: 'paid',
@@ -43,8 +45,9 @@ export async function processStripePaymentSucceeded(paymentIntent: Stripe.Paymen
       currentStepId: next?.id || entryStepId,
       completedStepIds: nextCompletedSteps(session, entryStepId),
       finalizationStatus: 'pending',
-      finalizeAfter: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+      finalizeAfter,
     });
+    await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
     await recordCheckoutEvent({ type: 'payment_succeeded', storeId: session.storeId, sessionId: session.id, cid: session.cid, funnelId: session.funnelId, routeId: session.routeId, funnelVersionId: session.funnelVersionId, stepId: entryStepId, purchaseKind: 'main', value: totals.total, currency: session.currency }).catch((error) => console.error('Payment event failed:', error));
     if (!next || next.type === 'thank_you') {
       const finalized = await finalizeCheckoutSession(session.id, storeConfig, { force: true });
@@ -62,7 +65,9 @@ export async function processStripePaymentSucceeded(paymentIntent: Stripe.Paymen
     ...(session.upsellStates || {}),
     [stepId]: { ...(currentState || { offerId: stepId }), offerId: currentState?.offerId || stepId, stepId, paymentId: paymentIntent.id, paymentStatus: 'paid' as const, decision: 'accepted' as const },
   };
-  const updated = await updateCheckoutSession(session.id, { upsellStates: states, upsellPaymentId: paymentIntent.id, upsellPaymentStatus: 'paid', currentStepId: next?.id || stepId, completedStepIds: nextCompletedSteps(session, stepId), finalizationStatus: 'pending', finalizeAfter: new Date(Date.now() + 15 * 60 * 1000).toISOString() });
+  const finalizeAfter = checkoutFinalizationDeadline();
+  const updated = await updateCheckoutSession(session.id, { upsellStates: states, upsellPaymentId: paymentIntent.id, upsellPaymentStatus: 'paid', currentStepId: next?.id || stepId, completedStepIds: nextCompletedSteps(session, stepId), finalizationStatus: 'pending', finalizeAfter });
+  await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
   await recordCheckoutEvent({ type: 'payment_succeeded', storeId: session.storeId, sessionId: session.id, cid: session.cid, funnelId: session.funnelId, routeId: session.routeId, funnelVersionId: session.funnelVersionId, stepId, purchaseKind: 'upsell', value: totals.total, currency: session.currency }).catch((error) => console.error('Upsell payment event failed:', error));
   if (!next || next.type === 'thank_you') {
     const finalized = await finalizeCheckoutSession(session.id, storeConfig, { force: true });

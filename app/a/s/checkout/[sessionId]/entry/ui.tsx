@@ -116,7 +116,7 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, ch
   }
 
   function contactIsValid() {
-    return contact.email && contact.firstName && contact.lastName && contact.address1 && contact.city && contact.province && contact.country && contact.zip;
+    return contact.email && contact.firstName && contact.lastName && contact.address1 && contact.city && contact.country && contact.zip;
   }
 
   function paypalPayload() {
@@ -160,8 +160,6 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, ch
   }
 
   const activeIndex = STEP_ORDER.indexOf(step);
-  const firstItem = session.items[0];
-
   useEffect(() => {
     paypalPayloadRef.current = paypalPayload();
     contactValidRef.current = Boolean(contactIsValid());
@@ -303,8 +301,8 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, ch
               <ReviewBox contact={contact} shippingMethod={shippingMethod} showShipping={false} onEdit={setStep} />
               <h2>Shipping method</h2>
               <div className={styles.methodBox}>
-                <ShippingOption id="standard" active={shippingMethod === 'standard'} price={session.shipping} label="Standard Shipping🌐(180 days Free refund)" onSelect={setShippingMethod} />
-                <ShippingOption id="express" active={shippingMethod === 'express'} price={storeConfig.expressShipping} label="Express🌐(Worldwide shipping)" onSelect={setShippingMethod} />
+                <ShippingOption id="standard" active={shippingMethod === 'standard'} price={storeConfig.standardShipping} currency={session.currency} label="Standard Shipping (180-day refund policy)" onSelect={setShippingMethod} />
+                <ShippingOption id="express" active={shippingMethod === 'express'} price={storeConfig.expressShipping} currency={session.currency} label="Express (worldwide shipping)" onSelect={setShippingMethod} />
               </div>
               <div className={styles.actionRow}>
                 <button className={styles.backButton} type="button" onClick={() => setStep('contact')}>‹ Return to contact</button>
@@ -344,16 +342,21 @@ export function OmniCheckout({ initialSession, storeConfig, initialStep, cid, ch
         </section>
 
         <aside className={styles.summaryColumn}>
-          <div className={styles.productRow}>
-            <div className={styles.thumbnail}>{firstItem?.image ? <Image src={firstItem.image} alt="" width={58} height={58} unoptimized /> : <span>1</span>}</div>
-            <div>
-              <strong>{firstItem?.title}</strong>
-              <p>4-Pack — Family Favorite — Create together</p>
+          {session.items.map((item) => (
+            <div className={styles.productRow} key={`${item.variantId}:${item.id}`}>
+              <div className={styles.thumbnail}>
+                {item.image ? <Image src={item.image} alt="" width={58} height={58} unoptimized /> : <span>{item.quantity}</span>}
+              </div>
+              <div>
+                <strong>{item.title}</strong>
+                <p>Quantity: {item.quantity}</p>
+              </div>
+              <strong>{money(item.price * item.quantity, session.currency)}</strong>
             </div>
-            <strong>{money(session.subtotal, session.currency)}</strong>
-          </div>
+          ))}
           <SummaryLine label="Subtotal" value={money(session.subtotal, session.currency)} />
           <SummaryLine label="Shipping" value={money(shipping, session.currency)} />
+          {session.tax > 0 && <SummaryLine label="Tax" value={money(session.tax, session.currency)} />}
           <div className={styles.totalRow}>
             <span>Total</span>
             <strong>{session.currency} {money(total, session.currency)}</strong>
@@ -386,12 +389,12 @@ function ReviewBox({ contact, shippingMethod, showShipping, onEdit }: { contact:
   );
 }
 
-function ShippingOption({ id, active, price, label, onSelect }: { id: 'standard' | 'express'; active: boolean; price: number; label: string; onSelect: (id: 'standard' | 'express') => void }) {
+function ShippingOption({ id, active, price, currency, label, onSelect }: { id: 'standard' | 'express'; active: boolean; price: number; currency: string; label: string; onSelect: (id: 'standard' | 'express') => void }) {
   return (
     <button className={styles.shippingOption} type="button" onClick={() => onSelect(id)}>
       <span className={active ? styles.radioActive : styles.radio} />
       <span>{label}</span>
-      <strong>{money(price)}</strong>
+      <strong>{money(price, currency)}</strong>
     </button>
   );
 }

@@ -35,6 +35,9 @@ export async function finalizeCheckoutSession(sessionId: string, storeConfig: St
     if (initial.finalizationStatus === 'completed' && initial.primaryOrderId && initial.primaryOrderNumber) {
       return { id: initial.primaryOrderId, order_number: initial.primaryOrderNumber, session: initial };
     }
+    if (initial.finalizationStatus === 'processing') {
+      throw new Error('Checkout finalization is already being processed');
+    }
     if (initial.primaryPaymentStatus !== 'paid' || !initial.customer || !initial.primaryPaymentId) throw new Error('Primary payment is not confirmed');
     if (!options.force && !postPurchaseComplete(storeConfig, initial)) throw new Error('Post-purchase funnel is not complete');
 
@@ -55,12 +58,14 @@ export async function finalizeCheckoutSession(sessionId: string, storeConfig: St
         shippingAddress: customer,
         shippingMethod: latest.primaryShippingMethod,
         shippingPrice: totals.shipping,
+        taxPrice: totals.tax,
         checkoutSessionId: latest.id,
         cid: latest.cid,
         tags: ['OPC-Finalized'],
         noteAttributes: [{ name: 'bundle_item_count', value: String(items.length) }, { name: 'primary_payment_id', value: primaryPaymentId }],
       });
       const order = await completeShopifyDraftOrder({ storeConfig, draftOrderId: latest.primaryDraftOrderId });
+      if (!order.order_number) throw new Error('Shopify completed the draft order without an order number');
       const completed = await updateCheckoutSession(sessionId, { finalizationStatus: 'completed', primaryOrderId: order.id, primaryOrderNumber: order.order_number, finalizedAt: new Date().toISOString() });
       await recordCheckoutEvent({ type: 'order_finalized', storeId: latest.storeId, sessionId: latest.id, cid: latest.cid, funnelId: latest.funnelId, routeId: latest.routeId, funnelVersionId: latest.funnelVersionId, value: totals.total, currency: latest.currency }).catch((error) => console.error('Order event failed:', error));
       return { ...order, session: completed };
@@ -83,6 +88,7 @@ export async function finalizeCheckoutSession(sessionId: string, storeConfig: St
       orderType: 'checkout',
       utm: latest.utm || {},
     });
+    if (!order.order_number) throw new Error('Shopify created the order without an order number');
     const completed = await updateCheckoutSession(sessionId, { finalizationStatus: 'completed', primaryOrderId: order.id, primaryOrderNumber: order.order_number, finalizedAt: new Date().toISOString() });
     await recordCheckoutEvent({ type: 'order_finalized', storeId: latest.storeId, sessionId: latest.id, cid: latest.cid, funnelId: latest.funnelId, routeId: latest.routeId, funnelVersionId: latest.funnelVersionId, value: totals.total, currency: latest.currency }).catch((error) => console.error('Order event failed:', error));
     return { ...order, session: completed };

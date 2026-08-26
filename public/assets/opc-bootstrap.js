@@ -20,12 +20,6 @@
     };
   }
 
-  function productTitle(form) {
-    var heading = document.querySelector("h1");
-    var button = form && form.querySelector("button");
-    return (heading && heading.textContent || button && button.textContent || "Shopify product").trim();
-  }
-
   function variantId(form) {
     var input = form && form.querySelector('[name="id"]');
     return input ? input.value : "";
@@ -35,17 +29,6 @@
     var input = form && form.querySelector('[name="quantity"]');
     var value = input ? parseInt(input.value, 10) : 1;
     return Number.isFinite(value) && value > 0 ? value : 1;
-  }
-
-  function price() {
-    var meta = window.ShopifyAnalytics && window.ShopifyAnalytics.meta;
-    var selectedVariant = meta && meta.selectedVariantId;
-    var product = meta && meta.product;
-    if (product && product.variants && selectedVariant) {
-      var variant = product.variants.find(function (item) { return String(item.id) === String(selectedVariant); });
-      if (variant && variant.price) return Number(variant.price) / 100;
-    }
-    return 0;
   }
 
   async function post(path, body) {
@@ -58,6 +41,20 @@
     var json = await response.json();
     if (!response.ok) throw new Error(json.error || "Checkout request failed");
     return json;
+  }
+
+  async function cartItems() {
+    var response = await fetch("/cart.js", { credentials: "same-origin" });
+    if (!response.ok) throw new Error("Unable to read cart contents");
+    var cart = await response.json();
+    return (Array.isArray(cart && cart.items) ? cart.items : []).map(function (item) {
+      return {
+        variantId: "gid://shopify/ProductVariant/" + String(item.variant_id || ""),
+        quantity: Number(item.quantity || 0)
+      };
+    }).filter(function (item) {
+      return item.variantId !== "gid://shopify/ProductVariant/" && Number.isInteger(item.quantity) && item.quantity > 0;
+    });
   }
 
   function shopDomain() {
@@ -75,6 +72,7 @@
     if (event) {
       event.preventDefault();
       event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
     }
 
     var button = event && event.currentTarget;
@@ -82,11 +80,6 @@
       ? button.closest('form[action*="/cart/add"], form[action="/cart/add"]')
       : document.querySelector('form[action*="/cart/add"], form[action="/cart/add"]');
     var variant = variantId(form);
-
-    if (!variant) {
-      navigate("/checkout");
-      return;
-    }
 
     var originalText = button && button.textContent;
     if (button) {
@@ -96,16 +89,14 @@
 
     try {
       var clientId = cid();
+      var items = variant
+        ? [{ variantId: "gid://shopify/ProductVariant/" + variant, quantity: quantity(form) }]
+        : await cartItems();
+      if (!items.length) throw new Error("Your cart is empty");
       var session = await post("/api/checkout/session", {
         shopDomain: shopDomain(),
         cid: clientId,
-        productId: window.ShopifyAnalytics && window.ShopifyAnalytics.meta && window.ShopifyAnalytics.meta.product
-          ? "gid://shopify/Product/" + window.ShopifyAnalytics.meta.product.id
-          : "",
-        variantId: "gid://shopify/ProductVariant/" + variant,
-        title: productTitle(form),
-        quantity: quantity(form),
-        price: price(),
+        items: items,
         currency: window.Shopify && window.Shopify.currency ? window.Shopify.currency.active : "USD",
         utm: utm()
       });

@@ -38,11 +38,6 @@
     return Number.isFinite(value) && value > 0 ? value : 1;
   }
 
-  function title(form) {
-    var heading = document.querySelector("h1");
-    return String(heading && heading.textContent || "Shopify product").trim();
-  }
-
   function request(path, body) {
     return fetch(proxyPrefix + path, {
       method: "POST",
@@ -57,31 +52,50 @@
     });
   }
 
+  function cartItems() {
+    return fetch("/cart.js", { credentials: "same-origin" }).then(function (response) {
+      if (!response.ok) throw new Error("Unable to read cart contents");
+      return response.json();
+    }).then(function (cart) {
+      var items = Array.isArray(cart && cart.items) ? cart.items : [];
+      return items.map(function (item) {
+        return {
+          variantId: "gid://shopify/ProductVariant/" + String(item.variant_id || ""),
+          quantity: Number(item.quantity || 0)
+        };
+      }).filter(function (item) {
+        return item.variantId !== "gid://shopify/ProductVariant/" && Number.isInteger(item.quantity) && item.quantity > 0;
+      });
+    });
+  }
+
   function start(event) {
     if (event) {
       event.preventDefault();
       event.stopPropagation();
+      if (event.stopImmediatePropagation) event.stopImmediatePropagation();
     }
     var button = event && event.currentTarget;
     var form = button && button.closest("form") || document.querySelector('form[action*="/cart/add"]');
     var variant = productVariant(form);
-    if (!variant) {
-      navigate("/checkout");
-      return;
-    }
     var originalText = button && button.textContent;
     if (button) {
       button.disabled = true;
       button.textContent = "Loading checkout...";
     }
-    request("/api/checkout/session", {
+    var cid = clientId();
+    var payload = {
       shopDomain: shopDomain(),
-      cid: clientId(),
-      variantId: "gid://shopify/ProductVariant/" + variant,
-      quantity: quantity(form),
-      title: title(form),
+      cid: cid,
       currency: window.Shopify && window.Shopify.currency ? window.Shopify.currency.active : "USD",
       utm: sourceParams()
+    };
+    var itemsPromise = variant
+      ? Promise.resolve([{ variantId: "gid://shopify/ProductVariant/" + variant, quantity: quantity(form) }])
+      : cartItems();
+    itemsPromise.then(function (items) {
+      if (!items.length) throw new Error("Your cart is empty");
+      return request("/api/checkout/session", Object.assign(payload, { items: items }));
     }).then(function (session) {
       navigate(session.redirectUrl);
     }).catch(function (error) {

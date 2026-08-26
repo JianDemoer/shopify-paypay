@@ -7,9 +7,9 @@
   "outputDirectory": ".next",
   "git": {
     "deploymentEnabled": {
-      "main": true
+      "codex/omni-checkout-app-proxy": true
     },
-    "productionBranch": "main",
+    "productionBranch": "codex/omni-checkout-app-proxy",
     "deploymentProtection": true
   },
   "crons": [

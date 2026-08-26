@@ -10,7 +10,7 @@ export const viewport: Viewport = {
 };
 
 export const metadata: Metadata = {
-  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://shopify-headless-lemon.vercel.app'),
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://shopify-omni-checkout.vercel.app'),
   title: {
     default: 'Modern Ecommerce Store | Premium Tech T-Shirts',
     template: '%s | Modern Ecommerce Store',

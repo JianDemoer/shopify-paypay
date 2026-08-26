@@ -21,7 +21,7 @@ export function CheckoutSuccess({
   const searchParams = useSearchParams();
   const { clearCart } = useCart();
   const clientReady = useClientReady();
-  const [order, setOrder] = useState<{ orderNumber: number; shopifyOrderId: string; shopDomain?: string } | null>(null);
+  const [order, setOrder] = useState<{ orderNumber: number } | null>(null);
   const paymentIntentId = searchParams.get('payment_intent');
   const checkoutSessionId = searchParams.get('checkout_session_id');
   const shouldPollOrder = Boolean(paymentIntentId || checkoutSessionId);
@@ -44,7 +44,7 @@ export function CheckoutSuccess({
         const response = await fetch(`${orderLookupPath}?${params.toString()}`);
         if (response.ok) {
           const data = await response.json();
-          setOrder({ orderNumber: data.orderNumber, shopifyOrderId: data.shopifyOrderId, shopDomain: data.shopDomain });
+          setOrder({ orderNumber: data.orderNumber });
           setLoading(false);
         } else if (response.status === 404) {
           attempts += 1;
@@ -75,7 +75,6 @@ export function CheckoutSuccess({
           <p className={styles.confirmationLabel}>Your Order Number</p>
           {loading ? <div className={styles.orderNumberLoading} /> : order ? <p data-testid="order-number" className={styles.orderNumber}>#{order.orderNumber}</p> : <p className={styles.orderNumberFallback}>Processing order...</p>}
         </div>
-        {order?.shopDomain && <div className={styles.devPortalBox}><p className={styles.devPortalLabel}>Order reference</p><a href={`https://admin.shopify.com/store/${order.shopDomain.split('.')[0]}/orders/${order.shopifyOrderId}`} target="_blank" rel="noopener noreferrer" className={styles.devPortalLink}>Open order in Shopify Admin</a></div>}
         <div className={styles.orderDetailsBox}>
           <div className={styles.detailRow}><ShoppingBag className={styles.detailIcon} /><div className={styles.detailContent}><p className={styles.detailLabel}>Order Status</p><p className={styles.detailValue}>Processing</p></div></div>
           <div className={styles.detailRow}><span className={styles.detailEmoji}>Email</span><div className={styles.detailContent}><p className={styles.detailLabel}>Next Step</p><p className={styles.detailValue}>Check your email for confirmation</p></div></div>

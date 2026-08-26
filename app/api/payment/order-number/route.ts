@@ -2,12 +2,10 @@ import { NextResponse } from 'next/server';
 import { getCheckoutSession } from '@/lib/checkout-sessions';
 import { getStoreConfig } from '@/lib/store-configs';
 import { verifyCheckoutAccessToken } from '@/lib/checkout-access';
+import { finalizeCheckoutSession } from '@/lib/order-finalization';
+import { findShopifyOrderByTag } from '@/lib/shopify-admin';
 
 export const dynamic = 'force-dynamic';
-
-function hasTag(tags: unknown, expected: string) {
-  return String(tags || '').split(',').map((tag) => tag.trim()).includes(expected);
-}
 
 export async function GET(req: Request) {
   try {
@@ -18,18 +16,30 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: 'checkout_session_id is required' }, { status: 400 });
     }
 
-    const session = await getCheckoutSession(checkoutSessionId);
+    let session = await getCheckoutSession(checkoutSessionId);
     if (!session) return NextResponse.json({ error: 'Checkout session not found' }, { status: 404 });
     const storeConfig = await getStoreConfig(session.storeId);
     if (!verifyCheckoutAccessToken(searchParams.get('checkout_token') || undefined, session.id, storeConfig.shopifyAppProxySecret)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    if (
+      session.primaryPaymentStatus === 'paid'
+      && session.finalizationStatus !== 'completed'
+      && session.finalizeAfter
+      && new Date(session.finalizeAfter).getTime() <= Date.now()
+    ) {
+      try {
+        const finalized = await finalizeCheckoutSession(session.id, storeConfig, { force: true });
+        session = finalized.session;
+      } catch (error) {
+        console.error('Checkout finalization retry failed:', error);
+      }
+    }
+
     if (session.finalizationStatus === 'completed' && session.primaryOrderId && session.primaryOrderNumber) {
       return NextResponse.json({
         orderNumber: session.primaryOrderNumber,
-        shopifyOrderId: session.primaryOrderId,
-        shopDomain: storeConfig.shopDomain,
       });
     }
 
@@ -41,8 +51,6 @@ export async function GET(req: Request) {
     if (knownOrderId && knownOrderNumber && knownStatus === 'paid' && (!paymentIntentId || paymentIntentId === knownPaymentId || paymentIntentId.startsWith('paypal:'))) {
       return NextResponse.json({
         orderNumber: knownOrderNumber,
-        shopifyOrderId: knownOrderId,
-        shopDomain: storeConfig.shopDomain,
       });
     }
 
@@ -53,24 +61,10 @@ export async function GET(req: Request) {
     ].filter(Boolean);
 
     for (const tag of tagQueries) {
-      const response = await fetch(
-        `https://${storeConfig.shopDomain}/admin/api/${process.env.SHOPIFY_ADMIN_API_VERSION || '2026-07'}/orders.json?status=any&limit=250&tag=${encodeURIComponent(tag)}&fields=id,order_number,tags`,
-        {
-          headers: {
-            'X-Shopify-Access-Token': storeConfig.shopifyAdminAccessToken,
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        }
-      );
-      if (!response.ok) return NextResponse.json({ error: 'Failed to query Shopify' }, { status: 502 });
-      const data = await response.json();
-      const order = data.orders?.find((candidate: any) => hasTag(candidate.tags, tag));
+      const order = await findShopifyOrderByTag(storeConfig, tag);
       if (order) {
         return NextResponse.json({
           orderNumber: order.order_number,
-          shopifyOrderId: order.id,
-          shopDomain: storeConfig.shopDomain,
         });
       }
     }

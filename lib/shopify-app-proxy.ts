@@ -4,7 +4,8 @@ import { shopifyClientSecrets } from './shopify-oauth';
 
 export function verifyAppProxySearchParams(
   searchParams: Record<string, string | string[] | undefined>,
-  secret = process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET || ''
+  secret = process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET || '',
+  now = Date.now()
 ) {
   const secrets = [...new Set([
     secret,
@@ -16,6 +17,14 @@ export function verifyAppProxySearchParams(
 
   const signature = stringValue(searchParams.signature);
   if (!signature) return false;
+
+  const timestamp = Number(stringValue(searchParams.timestamp));
+  if (
+    isProductionRuntime()
+    && (!Number.isFinite(timestamp) || Math.abs(Math.floor(now / 1000) - timestamp) > 5 * 60)
+  ) {
+    return false;
+  }
 
   const sortedPairs = Object.entries(searchParams)
     .filter(([key]) => key !== 'signature')

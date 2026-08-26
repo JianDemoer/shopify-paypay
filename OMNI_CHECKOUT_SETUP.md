@@ -77,15 +77,23 @@ server-side variant pricing, Draft Order creation, or order finalization.
 ## Runtime Environment
 
 ```bash
-# Optional: protects the separate /admin/stores and /admin/reports screens.
-# It is not needed for app installation or checkout runtime.
+# Optional global operator token for cross-store administration. Merchant
+# sessions are created automatically after each store's Shopify OAuth install.
 # ADMIN_CONFIG_TOKEN=change_this_token
+# Optional dedicated merchant-session signing key. SHOPIFY_API_SECRET is used
+# when this is omitted.
+# ADMIN_SESSION_SECRET=change_this_to_a_long_random_value
 SHOPIFY_API_KEY=your_shopify_app_client_id
 SHOPIFY_API_SECRET=your_shopify_app_client_secret
 SHOPIFY_APP_URL=https://your-app.example.com
 CONFIG_ENCRYPTION_KEY=change_this_to_a_long_random_value
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
+# Strongly recommended in production: schedules Draft Order finalization after
+# an abandoned post-purchase offer. Without it, the success page and daily
+# Vercel Cron remain as fallbacks, so an abandoned offer can take longer to
+# finalize.
+QSTASH_TOKEN=...
 ```
 
 Optional fallback single-store variables can still be set in `.env.local` for
@@ -103,7 +111,7 @@ Per store, fill:
 - Storefront token: optional; not required by checkout
 - Stripe publishable key, secret key, and webhook secret when Stripe is used
 - PayPal client ID and secret when PayPal is used
-- Order mode: Draft Order or Direct Order
+- Order mode: Draft Order or Direct Order. Both flows use Shopify Admin GraphQL.
 - Upsell product and variant GIDs
 - Checkout Zones and Funnel Versions JSON in the admin page
 
@@ -253,6 +261,22 @@ After payment succeeds:
    `cid:...`.
 5. The order note attributes include UTM, source URL, checkout session, and
    shipping method for backend attribution and reporting.
+
+## Draft Order Finalization
+
+The primary payment creates a Draft Order before card confirmation. The app
+waits briefly for post-purchase offers, then updates and completes that same
+Draft Order. A completed funnel finalizes immediately. When a buyer abandons
+an offer page, QStash schedules the same idempotent finalization endpoint for
+the configured grace period (`CHECKOUT_FINALIZATION_GRACE_SECONDS`, default
+15 minutes). The customer success page retries an overdue finalization, and
+the daily Vercel Cron is a final recovery path.
+
+Fixed `taxRate` values are represented as a non-shippable `Tax` adjustment in
+Draft Order mode, while product prices use GraphQL price overrides. This keeps
+the Shopify Draft total equal to the Stripe or PayPal amount. For automated
+Shopify tax calculation instead of a fixed tax rate, set `taxRate` to `0` and
+implement a store-specific tax calculation policy before enabling tax charges.
 
 For multi-store setups, the Shopify store used for order creation is the store
 whose Stripe webhook secret verifies the event. PaymentIntent metadata is not

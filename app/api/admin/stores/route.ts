@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { adminAccessForRequest } from '@/lib/admin-auth';
+import { adminAccessForRequest, adminMutationAccessForRequest } from '@/lib/admin-auth';
 import { normalizeShopDomain } from '@/lib/shopify-oauth';
 import { deleteStoreConfig, listStoreConfigs, publicStoreConfig, saveStoreConfig } from '@/lib/store-configs';
 
@@ -28,7 +28,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const access = adminAccessForRequest(request);
+  const access = adminMutationAccessForRequest(request);
   if (!access) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -49,7 +49,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const access = adminAccessForRequest(request);
+  const access = adminMutationAccessForRequest(request);
   if (!access) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }

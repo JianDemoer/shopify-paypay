@@ -4,6 +4,7 @@ import { nextStepAfterDecision, sessionFunnelVersion } from './funnel-runtime';
 import { finalizeCheckoutSession } from './order-finalization';
 import type { StoreConfig } from './store-configs';
 import { recordCheckoutEvent } from './checkout-events';
+import { checkoutFinalizationDeadline, scheduleCheckoutFinalizationSafely } from './checkout-finalization-scheduler';
 
 function completedSteps(session: CheckoutSession, stepId: string) {
   return [...new Set([...(session.completedStepIds || []), stepId])].slice(-100);
@@ -19,14 +20,16 @@ export async function processPayPalMainSucceeded(sessionId: string, storeConfig:
   const version = sessionFunnelVersion(storeConfig, session);
   const entryStepId = version?.entryStepId || session.currentStepId || '';
   const next = version && entryStepId ? nextStepAfterDecision(storeConfig, session, 'accepted', entryStepId) : undefined;
+  const finalizeAfter = checkoutFinalizationDeadline();
   const updated = await updateCheckoutSession(sessionId, {
     primaryPaymentId: paymentId,
     primaryPaymentStatus: 'paid',
     currentStepId: next?.id || entryStepId,
     completedStepIds: completedSteps(session, entryStepId),
     finalizationStatus: 'pending',
-    finalizeAfter: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    finalizeAfter,
   });
+  await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
   await recordCheckoutEvent({ type: 'payment_succeeded', storeId: session.storeId, sessionId: session.id, cid: session.cid, funnelId: session.funnelId, routeId: session.routeId, funnelVersionId: session.funnelVersionId, stepId: entryStepId, purchaseKind: 'main', value: expected.total, currency: session.currency }).catch((error) => console.error('PayPal payment event failed:', error));
   if (!next || next.type === 'thank_you') return (await finalizeCheckoutSession(sessionId, storeConfig, { force: true })).session;
   return updated;
@@ -44,6 +47,7 @@ export async function processPayPalUpsellSucceeded(sessionId: string, storeConfi
   if (!item) throw new Error('Checkout session is missing the paid add-on');
   const totals = calculateTotals([item], storeConfig, 'ships-with-original-order', 'upsell');
   const next = nextStepAfterDecision(storeConfig, session, 'accepted', stepId);
+  const finalizeAfter = checkoutFinalizationDeadline();
   const updated = await updateCheckoutSession(sessionId, {
     upsellStates: {
       ...(session.upsellStates || {}),
@@ -54,8 +58,9 @@ export async function processPayPalUpsellSucceeded(sessionId: string, storeConfi
     currentStepId: next?.id || stepId,
     completedStepIds: completedSteps(session, stepId),
     finalizationStatus: 'pending',
-    finalizeAfter: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+    finalizeAfter,
   });
+  await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
   await recordCheckoutEvent({ type: 'payment_succeeded', storeId: session.storeId, sessionId: session.id, cid: session.cid, funnelId: session.funnelId, routeId: session.routeId, funnelVersionId: session.funnelVersionId, stepId, purchaseKind: 'upsell', value: totals.total, currency: session.currency }).catch((error) => console.error('PayPal upsell event failed:', error));
   if (!next || next.type === 'thank_you') return (await finalizeCheckoutSession(sessionId, storeConfig, { force: true })).session;
   return updated;

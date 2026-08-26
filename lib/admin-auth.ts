@@ -10,8 +10,22 @@ export type AdminAccess =
   | { kind: 'global' }
   | { kind: 'shop'; shopDomain: string };
 
-function configuredSecret() {
+function configuredAdminToken() {
   return process.env.ADMIN_CONFIG_TOKEN?.trim() || '';
+}
+
+function configuredSessionSecret() {
+  const secret = (
+    process.env.ADMIN_SESSION_SECRET
+    || process.env.SHOPIFY_API_SECRET
+    || process.env.SHOPIFY_CLIENT_SECRET
+    || process.env.CONFIG_ENCRYPTION_KEY
+    || ''
+  ).trim();
+  if (!secret && isProductionRuntime()) {
+    throw new Error('ADMIN_SESSION_SECRET or SHOPIFY_API_SECRET is required in production');
+  }
+  return secret || 'local-admin-session-secret';
 }
 
 function signature(value: string, secret: string) {
@@ -25,9 +39,9 @@ function safeEqual(left: string, right: string) {
 }
 
 export function createAdminSession(shopDomain: string, now = Date.now()) {
-  const secret = configuredSecret();
+  const secret = configuredSessionSecret();
   const shop = normalizeShopDomain(shopDomain);
-  if (!secret || !shop) throw new Error('Admin session is not configured');
+  if (!shop) throw new Error('A valid Shopify shop is required for the admin session');
   const payload = Buffer.from(JSON.stringify({
     shop,
     exp: Math.floor(now / 1000) + ADMIN_SESSION_MAX_AGE,
@@ -37,9 +51,9 @@ export function createAdminSession(shopDomain: string, now = Date.now()) {
 }
 
 export function verifyAdminSession(value: string | undefined, now = Date.now()) {
-  const secret = configuredSecret();
+  const secret = configuredSessionSecret();
   const [payload, provided] = String(value || '').split('.');
-  if (!secret || !payload || !provided || !safeEqual(signature(payload, secret), provided)) return '';
+  if (!payload || !provided || !safeEqual(signature(payload, secret), provided)) return '';
   try {
     const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')) as { shop?: string; exp?: number; nonce?: string };
     const shop = normalizeShopDomain(decoded.shop);
@@ -50,10 +64,23 @@ export function verifyAdminSession(value: string | undefined, now = Date.now()) 
 }
 
 export function adminAccessForRequest(request: NextRequest): AdminAccess | null {
-  const secret = configuredSecret();
-  if (!secret) return isProductionRuntime() ? null : { kind: 'global' };
+  const secret = configuredAdminToken();
   const headerToken = request.headers.get('x-admin-token') || '';
   if (headerToken && safeEqual(headerToken, secret)) return { kind: 'global' };
   const shopDomain = verifyAdminSession(request.cookies.get(ADMIN_SESSION_COOKIE)?.value);
-  return shopDomain ? { kind: 'shop', shopDomain } : null;
+  if (shopDomain) return { kind: 'shop', shopDomain };
+  return !secret && !isProductionRuntime() ? { kind: 'global' } : null;
+}
+
+export function adminMutationAccessForRequest(request: NextRequest): AdminAccess | null {
+  const access = adminAccessForRequest(request);
+  if (!access || access.kind === 'global') return access;
+
+  const origin = request.headers.get('origin');
+  if (!origin) return null;
+  try {
+    return new URL(origin).origin === request.nextUrl.origin ? access : null;
+  } catch {
+    return null;
+  }
 }
