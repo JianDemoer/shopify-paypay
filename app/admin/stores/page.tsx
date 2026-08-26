@@ -19,8 +19,9 @@ export default async function StoreAdminPage({ searchParams }: { searchParams?: 
   const [initialLocale, cookieStore, query] = await Promise.all([preferredLocale(), cookies(), searchParams]);
   const sessionShop = verifyAdminSession(cookieStore.get(ADMIN_SESSION_COOKIE)?.value);
   const installedShop = query?.installed === '1' ? query.shop : undefined;
+  const selectedShop = sessionShop || installedShop;
   if ((process.env.ADMIN_CONFIG_TOKEN || isProductionRuntime()) && !sessionShop) {
-    return <StoreAdmin initialStores={[]} adminTokenRequired initialLocale={initialLocale} installedShop={installedShop} />;
+    return <StoreAdmin initialStores={[]} adminTokenRequired initialLocale={initialLocale} installedShop={installedShop} selectedShop={selectedShop} />;
   }
 
   const stores = (await listStoreConfigs()).filter((store) => !sessionShop || store.shopDomain === sessionShop);
@@ -33,5 +34,5 @@ export default async function StoreAdminPage({ searchParams }: { searchParams?: 
     hasPaypalClientSecret: Boolean(store.paypalClientSecret),
     createdAt: store.createdAt,
     updatedAt: store.updatedAt,
-  }))} initialLocale={initialLocale} installedShop={installedShop} />;
+  }))} initialLocale={initialLocale} installedShop={installedShop} selectedShop={selectedShop} />;
 }

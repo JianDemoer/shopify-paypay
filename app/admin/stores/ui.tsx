@@ -200,17 +200,20 @@ export function StoreAdmin({
   adminTokenRequired = false,
   initialLocale = 'en',
   installedShop,
+  selectedShop,
 }: {
   initialStores: AdminStore[];
   adminTokenRequired?: boolean;
   initialLocale?: AdminLocale;
   installedShop?: string;
+  selectedShop?: string;
 }) {
   const [locale, setLocale] = useState<AdminLocale>(initialLocale);
   const [stores, setStores] = useState(initialStores);
   const [form, setForm] = useState<StoreForm>(() => {
-    const installedStore = installedShop
-      ? initialStores.find((store) => store.shopDomain === installedShop)
+    const initialShop = selectedShop || installedShop;
+    const installedStore = initialShop
+      ? initialStores.find((store) => store.shopDomain === initialShop)
       : undefined;
     return installedStore ? storeForm(installedStore) : emptyForm;
   });

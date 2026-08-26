@@ -47,6 +47,13 @@ describe('StoreAdmin language switching', () => {
     expect(screen.getByText('1 个店铺')).toBeInTheDocument();
   });
 
+  it('selects the current Shopify store without showing an install confirmation', () => {
+    render(<StoreAdmin initialStores={[configuredStore]} initialLocale="en" selectedShop="demo.myshopify.com" />);
+
+    expect(screen.getByLabelText('Store name')).toHaveValue('Demo Store');
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
   it('shows known API errors in the selected language', async () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: false,
