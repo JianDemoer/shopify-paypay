@@ -24,14 +24,16 @@ interface UpsellCheckoutProps {
   cid: string;
   parentPaymentIntentId: string;
   checkoutToken: string;
+  previewMode?: boolean;
 }
 
 function money(value: number, currency: string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value);
 }
 
-function nextUrl(sessionId: string, cid: string, parentPaymentIntentId: string, checkoutToken: string) {
+function nextUrl(sessionId: string, cid: string, parentPaymentIntentId: string, checkoutToken: string, previewMode: boolean) {
   const params = new URLSearchParams({ cid, parent_payment_intent: parentPaymentIntentId, checkout_token: checkoutToken });
+  if (previewMode) params.set('preview', '1');
   return `/a/s/checkout/${encodeURIComponent(sessionId)}/upsell?${params.toString()}`;
 }
 
@@ -49,7 +51,7 @@ function navigate(path: string) {
   window.location.assign(new URL(path, window.location.origin).toString());
 }
 
-export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, parentPaymentIntentId, checkoutToken }: UpsellCheckoutProps) {
+export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, parentPaymentIntentId, checkoutToken, previewMode = false }: UpsellCheckoutProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const paypalRef = useRef<HTMLDivElement | null>(null);
@@ -57,10 +59,10 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
   const price = offerItem.price * offerItem.quantity;
   const acceptLabel = step.offer?.acceptLabel || `Yes, add it for ${money(price, session.currency)}`;
   const declineLabel = step.offer?.declineLabel || 'No thanks, continue to my order';
-  const returnUrl = useMemo(() => nextUrl(session.id, cid, parentPaymentIntentId, checkoutToken), [cid, checkoutToken, parentPaymentIntentId, session.id]);
+  const returnUrl = useMemo(() => nextUrl(session.id, cid, parentPaymentIntentId, checkoutToken, previewMode), [cid, checkoutToken, parentPaymentIntentId, previewMode, session.id]);
 
   useEffect(() => {
-    if (!parentPaymentIntentId.startsWith('paypal:') || !storeConfig.paypalClientId || !paypalRef.current || paypalRenderedRef.current) return;
+    if (previewMode || !parentPaymentIntentId.startsWith('paypal:') || !storeConfig.paypalClientId || !paypalRef.current || paypalRenderedRef.current) return;
     const render = () => {
       if (!window.paypal || !paypalRef.current || paypalRenderedRef.current) return;
       paypalRenderedRef.current = true;
@@ -99,12 +101,31 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
       const timer = window.setInterval(render, 250);
       return () => window.clearInterval(timer);
     }
-  }, [checkoutToken, parentPaymentIntentId, session.currency, session.id, step.id, storeConfig.paypalClientId, returnUrl]);
+  }, [checkoutToken, parentPaymentIntentId, previewMode, session.currency, session.id, step.id, storeConfig.paypalClientId, returnUrl]);
+
+  async function recordPreviewDecision(decision: 'accepted' | 'declined') {
+    const response = await fetch(`/a/s/api/checkout/funnel/decision?checkout_token=${encodeURIComponent(checkoutToken)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ checkoutSessionId: session.id, stepId: step.id, decision, preview: true }),
+    });
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(json.error || 'Unable to save this decision.');
+    if (json.previewComplete) {
+      navigate(`/a/s/checkout/${encodeURIComponent(session.id)}/success?checkout_session_id=${encodeURIComponent(session.id)}&checkout_token=${encodeURIComponent(checkoutToken)}&preview=1`);
+      return;
+    }
+    navigate(returnUrl);
+  }
 
   async function acceptOffer() {
     setLoading(true);
     setError('');
     try {
+      if (previewMode) {
+        await recordPreviewDecision('accepted');
+        return;
+      }
       const response = await fetch(`/a/s/api/payment/create-intent?checkout_token=${encodeURIComponent(checkoutToken)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -140,6 +161,10 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
     setLoading(true);
     setError('');
     try {
+      if (previewMode) {
+        await recordPreviewDecision('declined');
+        return;
+      }
       const response = await fetch(`/a/s/api/checkout/funnel/decision?checkout_token=${encodeURIComponent(checkoutToken)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,7 +201,14 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
           <strong className={styles.price}>{money(price, session.currency)}</strong>
         </div>
 
-        {parentPaymentIntentId.startsWith('paypal:') ? (
+        {previewMode ? (
+          <div className={styles.actions}>
+            <button type="button" className={styles.accept} disabled={loading} onClick={acceptOffer}>
+              {loading ? 'Saving decision...' : acceptLabel}
+            </button>
+            <button type="button" className={styles.decline} disabled={loading} onClick={declineOffer}>{declineLabel}</button>
+          </div>
+        ) : parentPaymentIntentId.startsWith('paypal:') ? (
           <div className={styles.actions}>
             {storeConfig.paypalClientId ? <div ref={paypalRef} /> : <p className={styles.error}>PayPal add-on payment is not configured.</p>}
             <button type="button" className={styles.decline} disabled={loading} onClick={declineOffer}>{declineLabel}</button>
@@ -189,7 +221,7 @@ export function UpsellCheckout({ session, storeConfig, step, offerItem, cid, par
             <button type="button" className={styles.decline} disabled={loading} onClick={declineOffer}>{declineLabel}</button>
           </div>
         )}
-        <p className={styles.disclosure}>Your original payment method may be charged for this add-on. No card details are entered on this page.</p>
+        <p className={styles.disclosure}>{previewMode ? 'Preview mode: this records the funnel path only. No payment is collected and no order is completed.' : 'Your original payment method may be charged for this add-on. No card details are entered on this page.'}</p>
         {error && <div className={styles.error} role="alert">{error}</div>}
       </section>
     </main>

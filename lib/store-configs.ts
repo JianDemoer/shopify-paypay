@@ -203,7 +203,7 @@ function fallbackStore(): StoreConfig | null {
   const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
   const stripePublishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
-  if (!shopDomain || !adminToken || !stripeSecretKey || !stripePublishableKey) {
+  if (!shopDomain || !adminToken) {
     return null;
   }
 
@@ -218,8 +218,8 @@ function fallbackStore(): StoreConfig | null {
     shopifyAppProxySecret: process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET,
     shopifyScopes: process.env.SHOPIFY_API_SCOPES || '',
     orderMode: process.env.SHOPIFY_ORDER_MODE === 'draft_order' ? 'draft_order' : 'direct_order',
-    stripePublishableKey,
-    stripeSecretKey,
+    stripePublishableKey: stripePublishableKey || '',
+    stripeSecretKey: stripeSecretKey || '',
     stripeWebhookSecret: process.env.STRIPE_WEBHOOK_SECRET,
     stripeWebhookSecretProd: process.env.STRIPE_WEBHOOK_SECRET_PROD,
     paypalClientId: process.env.PAYPAL_CLIENT_ID || process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID,

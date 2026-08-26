@@ -7,6 +7,7 @@ import { upstashRestConfig } from './upstash-config';
 export type CheckoutEventType =
   | 'checkout_started'
   | 'contact_submitted'
+  | 'checkout_reviewed'
   | 'payment_intent_created'
   | 'payment_succeeded'
   | 'funnel_step_viewed'
@@ -56,7 +57,7 @@ function cleanProperties(value: unknown) {
 
 function normalizeEvent(input: Partial<CheckoutEvent>): CheckoutEvent {
   const allowed: CheckoutEventType[] = [
-    'checkout_started', 'contact_submitted', 'payment_intent_created', 'payment_succeeded',
+    'checkout_started', 'contact_submitted', 'checkout_reviewed', 'payment_intent_created', 'payment_succeeded',
     'funnel_step_viewed', 'funnel_step_decision', 'checkout_abandoned', 'order_finalized',
   ];
   if (!input.storeId || !input.sessionId || !input.type || !allowed.includes(input.type)) throw new Error('Invalid checkout event');

@@ -1,6 +1,6 @@
 import type { StoreConfig } from './store-configs';
 import { getCheckoutSession, updateCheckoutSession, type CheckoutSession, type UpsellState } from './checkout-sessions';
-import { nextStepAfterDecision } from './funnel-runtime';
+import { firstPendingPostPurchaseStep, nextStepAfterDecision } from './funnel-runtime';
 import { recordCheckoutEvent } from './checkout-events';
 import { checkoutFinalizationDeadline, scheduleCheckoutFinalizationSafely } from './checkout-finalization-scheduler';
 
@@ -8,9 +8,13 @@ export async function recordFunnelDecision(
   storeConfig: StoreConfig,
   session: CheckoutSession,
   stepId: string,
-  decision: 'accepted' | 'declined'
+  decision: 'accepted' | 'declined',
+  options: { preview?: boolean } = {}
 ) {
-  if (session.currentStepId !== stepId) throw new Error('Funnel step is no longer active');
+  if (session.currentStepId !== stepId) {
+    const previewStep = options.preview ? firstPendingPostPurchaseStep(storeConfig, session) : undefined;
+    if (previewStep?.id !== stepId) throw new Error('Funnel step is no longer active');
+  }
   const currentState = session.upsellStates?.[stepId];
   if (currentState?.paymentStatus === 'paid') throw new Error('Paid funnel steps cannot be declined');
   const next = nextStepAfterDecision(storeConfig, session, decision, stepId);
@@ -22,15 +26,16 @@ export async function recordFunnelDecision(
     paymentStatus: decision === 'declined' ? 'failed' : currentState?.paymentStatus,
   };
   const completedStepIds = [...new Set([...(session.completedStepIds || []), stepId])].slice(-100);
-  const finalizeAfter = checkoutFinalizationDeadline();
+  const shouldScheduleFinalization = session.primaryPaymentStatus === 'paid';
+  const finalizeAfter = shouldScheduleFinalization ? checkoutFinalizationDeadline() : undefined;
   const updated = await updateCheckoutSession(session.id, {
     upsellStates: { ...(session.upsellStates || {}), [stepId]: state },
     currentStepId: next?.id || stepId,
     completedStepIds,
-    finalizationStatus: 'pending',
+    finalizationStatus: shouldScheduleFinalization ? 'pending' : undefined,
     finalizeAfter,
   });
-  await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
+  if (finalizeAfter) await scheduleCheckoutFinalizationSafely(session.id, finalizeAfter);
   await recordCheckoutEvent({
     type: 'funnel_step_decision',
     storeId: session.storeId,

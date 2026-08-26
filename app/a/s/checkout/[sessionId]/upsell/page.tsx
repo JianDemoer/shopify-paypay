@@ -6,8 +6,8 @@ import { getStoreConfig, publicStoreConfig } from '@/lib/store-configs';
 import { findFunnelStep, normalizeFunnelConfigs } from '@/lib/funnel-configs';
 import { resolveCheckoutLineItems } from '@/lib/shopify-admin';
 import { processStripePaymentSucceeded } from '@/lib/stripe-payment-processing';
-import { CheckoutSuccess } from '@/components/CheckoutSuccess';
 import { UpsellCheckout, UpsellWaiting } from './ui';
+import { firstPendingPostPurchaseStep } from '@/lib/funnel-runtime';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -21,6 +21,7 @@ interface PageProps {
     payment_intent_client_secret?: string;
     redirect_status?: string;
     checkout_token?: string;
+    preview?: string;
   }>;
 }
 
@@ -40,6 +41,7 @@ export default async function AppProxyUpsellPage({ params, searchParams }: PageP
   if (!session) return <div>Checkout session not found or expired.</div>;
   const fullStoreConfig = await getStoreConfig(session.storeId || session.shopDomain);
   if (!verifyCheckoutAccessToken(query?.checkout_token, sessionId, fullStoreConfig.shopifyAppProxySecret)) return <div>Invalid checkout signature.</div>;
+  const previewMode = query?.preview === '1';
 
   const parentPaymentIntentId = query?.parent_payment_intent || query?.payment_intent || '';
   const returnedPaymentIntentId = query?.parent_payment_intent ? query?.payment_intent || '' : '';
@@ -70,11 +72,19 @@ export default async function AppProxyUpsellPage({ params, searchParams }: PageP
       parentConfirmed = false;
     }
   }
-  if (!parentConfirmed) return <UpsellWaiting checkoutToken={query?.checkout_token || ''} sessionId={session.id} />;
+  if (!previewMode && !parentConfirmed) return <UpsellWaiting checkoutToken={query?.checkout_token || ''} sessionId={session.id} />;
+  if (previewMode && (session.checkoutStatus !== 'ready_for_payment' || !session.primaryDraftOrderId)) {
+    redirect(`/a/s/checkout/${encodeURIComponent(session.id)}/entry?cid=${encodeURIComponent(session.cid)}&checkout_token=${encodeURIComponent(query?.checkout_token || '')}&step=payment_method`);
+  }
 
-  const step = await stepForSession(fullStoreConfig, session);
+  const step = previewMode
+    ? firstPendingPostPurchaseStep(fullStoreConfig, session)
+    : await stepForSession(fullStoreConfig, session);
   if (!step || step.type === 'thank_you') {
-    redirect(`/a/s/checkout/${encodeURIComponent(session.id)}/success?checkout_session_id=${encodeURIComponent(session.id)}&payment_intent=${encodeURIComponent(parentPaymentIntentId)}&checkout_token=${encodeURIComponent(query?.checkout_token || '')}`);
+    const params = new URLSearchParams({ checkout_session_id: session.id, checkout_token: query?.checkout_token || '' });
+    if (parentPaymentIntentId) params.set('payment_intent', parentPaymentIntentId);
+    if (previewMode) params.set('preview', '1');
+    redirect(`/a/s/checkout/${encodeURIComponent(session.id)}/success?${params.toString()}`);
   }
   if (step.type !== 'upsell' && step.type !== 'downsell') return <UpsellWaiting checkoutToken={query?.checkout_token || ''} sessionId={session.id} />;
   const offer = step.offer;
@@ -91,6 +101,7 @@ export default async function AppProxyUpsellPage({ params, searchParams }: PageP
       cid={session.cid}
       parentPaymentIntentId={parentPaymentIntentId}
       checkoutToken={query?.checkout_token || ''}
+      previewMode={previewMode}
     />
   );
 }

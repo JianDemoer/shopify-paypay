@@ -11,6 +11,7 @@ import { getStoreConfig, revokeShopifyInstallation, saveStoreConfig } from '../s
 
 describe('store configuration selection', () => {
   const originalEncryptionKey = process.env.CONFIG_ENCRYPTION_KEY;
+  const originalEnv = { ...process.env };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -18,8 +19,24 @@ describe('store configuration selection', () => {
   });
 
   afterEach(() => {
+    process.env = { ...originalEnv };
     if (originalEncryptionKey === undefined) delete process.env.CONFIG_ENCRYPTION_KEY;
     else process.env.CONFIG_ENCRYPTION_KEY = originalEncryptionKey;
+  });
+
+  it('allows an installed Shopify store to use the non-payment workflow without Stripe keys', async () => {
+    process.env.SHOPIFY_STORE_DOMAIN = 'installed.myshopify.com';
+    process.env.SHOPIFY_ADMIN_ACCESS_TOKEN = 'shopify-admin-token';
+    delete process.env.STRIPE_SECRET_KEY;
+    delete process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+    (readFile as jest.Mock).mockRejectedValueOnce({ code: 'ENOENT' });
+
+    await expect(getStoreConfig('installed.myshopify.com')).resolves.toMatchObject({
+      shopDomain: 'installed.myshopify.com',
+      shopifyAdminAccessToken: 'shopify-admin-token',
+      stripeSecretKey: '',
+      stripePublishableKey: '',
+    });
   });
 
   it('does not fall back to the first store for an unknown identifier', async () => {

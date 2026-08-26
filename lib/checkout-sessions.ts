@@ -65,6 +65,8 @@ export interface CheckoutSession {
   upsellOfferIds?: string[];
   upsellStates?: Record<string, UpsellState>;
   customer?: CheckoutCustomer;
+  checkoutStatus?: 'open' | 'ready_for_payment' | 'abandoned';
+  checkoutPreparedAt?: string;
   primaryPaymentId?: string;
   primaryPaymentStatus?: 'pending' | 'paid' | 'failed';
   primaryPaymentMethod?: 'stripe' | 'paypal';
@@ -264,6 +266,7 @@ export async function createCheckoutSession(input: any, resolvedItems?: Checkout
       ? input.funnelSelection.upsellOfferIds.map((id: unknown) => String(id)).slice(0, 20)
       : [],
     upsellStates: {},
+    checkoutStatus: 'open',
     createdAt: now.toISOString(),
     expiresAt: expiresAt.toISOString(),
     accessExpiresAt: accessExpiresAt.toISOString(),
@@ -408,7 +411,7 @@ export async function releasePrimaryPaymentMethodReservation(
 
     const updated = { ...current };
     delete updated.primaryPaymentMethod;
-    delete updated.primaryShippingMethod;
+    if (updated.checkoutStatus !== 'ready_for_payment') delete updated.primaryShippingMethod;
     await persistSession(updated);
     return true;
   } finally {
@@ -428,7 +431,7 @@ export async function clearFailedPrimaryPayment(id: string, paymentId: string) {
     delete updated.primaryPaymentId;
     delete updated.primaryPaymentStatus;
     delete updated.primaryPaymentMethod;
-    delete updated.primaryShippingMethod;
+    if (updated.checkoutStatus !== 'ready_for_payment') delete updated.primaryShippingMethod;
     await persistSession(updated);
     return true;
   } finally {
