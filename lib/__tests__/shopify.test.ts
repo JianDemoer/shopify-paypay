@@ -129,8 +129,8 @@ describe('Shopify API Functions', () => {
                     id: 'gid://shopify/ProductVariant/2',
                     title: 'Default Title',
                     availableForSale: true,
-                    price: { amount: '19.99', currencyCode: 'USD' },
-                    compareAtPrice: null,
+                    price: '19.99',
+                    compareAtPrice: '24.99',
                   }],
                 },
               }],
@@ -148,6 +148,7 @@ describe('Shopify API Functions', () => {
         availableForSale: true,
       });
       expect(result[0].variants[0].price).toEqual({ amount: '19.99', currencyCode: 'USD' });
+      expect(result[0].variants[0].compareAtPrice).toEqual({ amount: '24.99', currencyCode: 'USD' });
       expect(mockFetch).toHaveBeenCalledWith(
         'https://installed-store.myshopify.com/admin/api/2026-07/graphql.json',
         expect.objectContaining({
@@ -157,7 +158,8 @@ describe('Shopify API Functions', () => {
         })
       );
       const request = mockFetch.mock.calls[0][1] as RequestInit;
-      expect(String(request.body)).toContain('price { amount currencyCode }');
+      expect(String(request.body)).toMatch(/\bprice\b/);
+      expect(String(request.body)).not.toContain('price {');
     });
 
     it('uses the configured default store when environment variables are missing', async () => {

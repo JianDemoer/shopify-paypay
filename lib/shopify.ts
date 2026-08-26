@@ -100,8 +100,8 @@ const adminProductFields = `
       id
       title
       availableForSale
-      price { amount currencyCode }
-      compareAtPrice { amount currencyCode }
+      price
+      compareAtPrice
     }
   }
 `;
