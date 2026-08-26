@@ -22,9 +22,9 @@ export default async function ProductsPage() {
       
       {needsConfiguration ? (
         <div className={styles.emptyState}>
-          <h2>Storefront not configured</h2>
-          <p>Add a default Shopify store before loading products.</p>
-          <Link href="/admin/stores" className={styles.configureLink}>Configure store</Link>
+          <h2>Shopify app not installed</h2>
+          <p>Install the Shopify app to load the store catalog automatically.</p>
+          <Link href="/install" className={styles.configureLink}>Install app</Link>
         </div>
       ) : (
         <div className={styles.grid}>

@@ -27,6 +27,8 @@
 
 .panel h1 { margin: 0; font-size: 28px; }
 .panel p:not(.eyebrow) { color: #5a6971; line-height: 1.5; }
+.success { display: grid; gap: 5px; margin: 18px 0 4px; padding: 12px 13px; border: 1px solid #cce3d2; border-radius: 6px; background: #f3fbf5; color: #1f5130; line-height: 1.45; }
+.success span { color: #4a6f54; font-size: 13px; }
 .form { display: grid; gap: 8px; margin-top: 24px; }
 .form label { color: #34434c; font-size: 13px; font-weight: 700; }
 .form input { min-height: 44px; padding: 0 12px; border: 1px solid #bdcbd1; border-radius: 5px; font-size: 15px; }

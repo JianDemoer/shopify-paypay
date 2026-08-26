@@ -215,7 +215,7 @@ Webhooks allow orders to be created in Shopify Admin even if the user closes the
 ├── components/
 │   └── checkout/           # Stripe Element wrappers & Address forms
 ├── lib/
-│   ├── shopify.ts          # Storefront API (Catalog)
+│   ├── shopify.ts          # Installed Admin OAuth catalog + optional Storefront API
 │   └── shopify-admin.ts    # Admin API (Order Creation)
 ├── contexts/
 │   └── CartContext.tsx     # Cart logic + persistence
@@ -232,8 +232,8 @@ This project is optimized for Vercel. Ensure the following Environment Variables
 
 | Variable | Source |
 |----------|--------|
-| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | Shopify App Settings |
-| `SHOPIFY_ADMIN_API_TOKEN` | Shopify Custom App (write_orders) |
+| `SHOPIFY_STOREFRONT_ACCESS_TOKEN` | Optional Storefront API channel; not required after app installation |
+| `SHOPIFY_ADMIN_ACCESS_TOKEN` | Optional local fallback only; production installs obtain this through Shopify OAuth |
 | `STRIPE_SECRET_KEY` | Stripe Dashboard |
 | `STRIPE_WEBHOOK_SECRET` | Stripe Dashboard > Webhooks |
 

@@ -60,16 +60,38 @@ Open the returned `redirectUrl`, for example:
 http://127.0.0.1:3000/a/s/checkout/opc_xxx/entry?cid=cid_xxx
 ```
 
-## Required Environment
+## Shopify App Installation Is the Store Connection
+
+The Shopify app installation is the runtime connection for a store. After the
+OAuth callback succeeds, the app automatically persists the store domain, the
+Shopify Admin OAuth access token, the authorized scopes, and the App Proxy
+verification secret. The checkout and catalog routes resolve the store from
+Shopify's signed App Proxy request; they do not depend on a merchant manually
+copying Shopify tokens into `/admin/stores`.
+
+The Admin API is the default catalog channel after installation. A Storefront
+API token is optional and is only needed for the optional Storefront cart
+mutation helpers. It is never required for the App Proxy checkout session,
+server-side variant pricing, Draft Order creation, or order finalization.
+
+## Runtime Environment
 
 ```bash
-ADMIN_CONFIG_TOKEN=change_this_token
+# Optional: protects the separate /admin/stores and /admin/reports screens.
+# It is not needed for app installation or checkout runtime.
+# ADMIN_CONFIG_TOKEN=change_this_token
+SHOPIFY_API_KEY=your_shopify_app_client_id
+SHOPIFY_API_SECRET=your_shopify_app_client_secret
+SHOPIFY_APP_URL=https://your-app.example.com
+CONFIG_ENCRYPTION_KEY=change_this_to_a_long_random_value
 UPSTASH_REDIS_REST_URL=https://...
 UPSTASH_REDIS_REST_TOKEN=...
 ```
 
-Optional fallback single-store variables can still be set in `.env.local`.
-For multi-store usage, configure each store at:
+Optional fallback single-store variables can still be set in `.env.local` for
+local development. They are not the normal production installation path.
+For multi-store usage, each store is created automatically when it installs
+the Shopify app. `/admin/stores` is only for optional commerce settings:
 
 ```text
 /admin/stores
@@ -77,14 +99,10 @@ For multi-store usage, configure each store at:
 
 Per store, fill:
 
-- Shopify store domain
-- Shopify Storefront token
-- Shopify Admin access token
-- Shopify App Proxy secret
-- Stripe publishable key
-- Stripe secret key
-- Stripe webhook secret
-- PayPal client ID and secret
+- Shopify connection: managed by the app installation
+- Storefront token: optional; not required by checkout
+- Stripe publishable key, secret key, and webhook secret when Stripe is used
+- PayPal client ID and secret when PayPal is used
 - Order mode: Draft Order or Direct Order
 - Upsell product and variant GIDs
 - Checkout Zones and Funnel Versions JSON in the admin page
@@ -92,9 +110,10 @@ Per store, fill:
 ## Shopify Theme Injection
 
 The preferred production path is the Theme App Extension included in this
-repository. After installing the app, open **Online Store -> Themes ->
-Customize -> App embeds**, enable **Omni Checkout**, and save the theme. Deploy
-the extension with Shopify CLI so it is available to the installed app:
+repository. It is delivered with the Shopify app and is the product-page
+injection path; installation and OAuth connection do not depend on the admin
+configuration page. Deploy the extension with Shopify CLI so it is available
+to installed stores:
 
 ```bash
 shopify app dev
@@ -105,7 +124,10 @@ shopify app deploy
 The embed listens for product-page checkout buttons and calls the configured
 App Proxy. It does not load card fields or handle payment credentials.
 
-Add this script through a Shopify App Embed or theme snippet:
+For a theme that has disabled the embed, enable **Omni Checkout** once under
+**Online Store -> Themes -> Customize -> App embeds**. This is a theme-level
+activation, not a Shopify token or store configuration step. A legacy theme can
+also load the same asset explicitly:
 
 ```html
 <script src="https://YOUR_APP_DOMAIN/assets/opc-bootstrap.js" defer></script>
@@ -125,12 +147,12 @@ The script creates sessions through the App Proxy API route:
 ```
 
 This keeps the product-page request on the Shopify store domain and avoids
-cross-origin browser requests. When a store has a Shopify App Proxy secret
-configured in `/admin/stores`, this route verifies Shopify's App Proxy
-signature before creating the checkout session.
+cross-origin browser requests. The Shopify App Proxy secret captured during
+installation verifies Shopify's App Proxy signature before creating the
+checkout session.
 
-In production, App Proxy routes require a configured Shopify App Proxy secret.
-Missing secrets are allowed only during local development.
+In production, App Proxy routes use the secret captured from the Shopify app
+installation. Missing secrets are allowed only during local development.
 
 The direct `/api/checkout/session` route is a public storefront entry point for
 the configured single store. It is protected by server-side variant/price

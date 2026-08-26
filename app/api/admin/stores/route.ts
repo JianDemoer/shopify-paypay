@@ -14,11 +14,13 @@ export async function GET(request: NextRequest) {
     stores: configs.map((config) => ({
       ...publicStoreConfig(config),
       hasShopifyAdminAccessToken: Boolean(config.shopifyAdminAccessToken),
+      hasShopifyAppProxySecret: Boolean(config.shopifyAppProxySecret),
       hasStripeSecretKey: Boolean(config.stripeSecretKey),
       hasStripeWebhookSecret: Boolean(config.stripeWebhookSecret || config.stripeWebhookSecretProd),
       hasPaypalClientSecret: Boolean(config.paypalClientSecret),
       storefrontAccessToken: config.storefrontAccessToken ? 'configured' : '',
       shopifyAppProxySecret: config.shopifyAppProxySecret ? 'configured' : '',
+      shopifyScopes: config.shopifyScopes || '',
       createdAt: config.createdAt,
       updatedAt: config.updatedAt,
     })),

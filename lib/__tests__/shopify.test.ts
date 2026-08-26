@@ -96,8 +96,68 @@ describe('Shopify API Functions', () => {
       delete process.env.SHOPIFY_STORE_DOMAIN;
 
       await expect(getProducts()).rejects.toThrow(
-        'Missing required environment variables'
+        'Install the Shopify app first'
       );
+    });
+
+    it('uses the installed Shopify Admin OAuth connection when Storefront token is absent', async () => {
+      delete process.env.SHOPIFY_STORE_DOMAIN;
+      delete process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+      mockGetStoreConfig.mockResolvedValue({
+        id: 'installed-store.myshopify.com',
+        name: 'Installed Store',
+        shopDomain: 'installed-store.myshopify.com',
+        currency: 'USD',
+        shopifyAdminAccessToken: 'shpat_installed',
+      } as Awaited<ReturnType<typeof getStoreConfig>>);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            products: {
+              nodes: [{
+                id: 'gid://shopify/Product/1',
+                title: 'Installed Product',
+                handle: 'installed-product',
+                description: '<p>Product</p>',
+                descriptionHtml: '<p>Product</p>',
+                vendor: 'Shop',
+                productType: 'Demo',
+                featuredImage: { url: 'https://example.com/product.jpg', altText: 'Product' },
+                variants: {
+                  nodes: [{
+                    id: 'gid://shopify/ProductVariant/2',
+                    title: 'Default Title',
+                    availableForSale: true,
+                    price: { amount: '19.99', currencyCode: 'USD' },
+                    compareAtPrice: null,
+                  }],
+                },
+              }],
+            },
+          },
+        }),
+      } as Response);
+
+      const result = await getProducts();
+
+      expect(result[0]).toMatchObject({
+        id: 'gid://shopify/Product/1',
+        title: 'Installed Product',
+        description: 'Product',
+        availableForSale: true,
+      });
+      expect(result[0].variants[0].price).toEqual({ amount: '19.99', currencyCode: 'USD' });
+      expect(mockFetch).toHaveBeenCalledWith(
+        'https://installed-store.myshopify.com/admin/api/2026-07/graphql.json',
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'X-Shopify-Access-Token': 'shpat_installed',
+          }),
+        })
+      );
+      const request = mockFetch.mock.calls[0][1] as RequestInit;
+      expect(String(request.body)).toContain('price { amount currencyCode }');
     });
 
     it('uses the configured default store when environment variables are missing', async () => {
@@ -114,7 +174,7 @@ describe('Shopify API Functions', () => {
 
       await expect(getProducts()).resolves.toEqual([]);
       expect(mockFetch).toHaveBeenCalledWith(
-        'https://configured-store.myshopify.com/api/2024-01/graphql.json',
+        'https://configured-store.myshopify.com/api/2026-07/graphql.json',
         expect.objectContaining({
           headers: expect.objectContaining({
             'X-Shopify-Storefront-Access-Token': 'configured-token',
@@ -320,6 +380,41 @@ describe('Shopify API Functions', () => {
       expect(mockFetch).toHaveBeenCalledTimes(1);
       expect(result).toHaveLength(1);
       expect(result[0].title).toBe('Summer Collection');
+    });
+
+    it('uses the Admin GraphQL Count scalar structure for an installed store', async () => {
+      delete process.env.SHOPIFY_STORE_DOMAIN;
+      delete process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+      mockGetStoreConfig.mockResolvedValue({
+        id: 'installed-store.myshopify.com',
+        name: 'Installed Store',
+        shopDomain: 'installed-store.myshopify.com',
+        currency: 'USD',
+        shopifyAdminAccessToken: 'shpat_installed',
+      } as Awaited<ReturnType<typeof getStoreConfig>>);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          data: {
+            collections: {
+              nodes: [{
+                id: 'gid://shopify/Collection/1',
+                title: 'Installed Collection',
+                handle: 'installed',
+                description: '',
+                descriptionHtml: '',
+                productsCount: { count: 7 },
+              }],
+            },
+          },
+        }),
+      } as Response);
+
+      const result = await getCollections();
+
+      expect(result[0].productsCount).toBe(7);
+      const request = mockFetch.mock.calls[0][1] as RequestInit;
+      expect(String(request.body)).toContain('productsCount { count }');
     });
   });
 

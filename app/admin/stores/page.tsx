@@ -27,6 +27,7 @@ export default async function StoreAdminPage({ searchParams }: { searchParams?: 
   return <StoreAdmin initialStores={stores.map((store) => ({
     ...publicStoreConfig(store),
     hasShopifyAdminAccessToken: Boolean(store.shopifyAdminAccessToken),
+    hasShopifyAppProxySecret: Boolean(store.shopifyAppProxySecret),
     hasStripeSecretKey: Boolean(store.stripeSecretKey),
     hasStripeWebhookSecret: Boolean(store.stripeWebhookSecret || store.stripeWebhookSecretProd),
     hasPaypalClientSecret: Boolean(store.paypalClientSecret),

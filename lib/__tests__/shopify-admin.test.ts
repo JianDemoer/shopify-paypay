@@ -19,7 +19,7 @@ describe('Shopify checkout item resolver', () => {
           productVariant: {
             id: 'gid://shopify/ProductVariant/1',
             title: 'Default Title',
-            price: '29.97',
+            price: { amount: '29.97', currencyCode: 'USD' },
             product: { id: 'gid://shopify/Product/1', title: 'Pen' },
             image: { url: 'https://example.com/pen.jpg' },
           },
@@ -37,5 +37,7 @@ describe('Shopify checkout item resolver', () => {
     expect(item.price).toBe(29.97);
     expect(item.title).toBe('Pen');
     expect(item.variantId).toBe('gid://shopify/ProductVariant/1');
+    const request = (global.fetch as jest.Mock).mock.calls[0][1] as RequestInit;
+    expect(String(request.body)).toContain('price { amount currencyCode }');
   });
 });

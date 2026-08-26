@@ -17,8 +17,7 @@ export default async function CollectionsPage() {
     collections = await getCollections();
   } catch (error) {
     console.warn('Failed to fetch collections during build:', error);
-    // During build time without API credentials, return empty state
-    // This allows the build to complete; live data loads on client access
+    // Keep the page renderable before a store has installed the app.
   }
 
   return (

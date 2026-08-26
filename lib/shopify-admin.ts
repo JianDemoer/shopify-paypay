@@ -108,7 +108,7 @@ export async function resolveCheckoutLineItems(
             productVariant(id: $id) {
               id
               title
-              price
+              price { amount currencyCode }
               product { id title }
               image { url }
             }
@@ -124,7 +124,8 @@ export async function resolveCheckoutLineItems(
         throw new Error('Shopify product variant is unavailable');
       }
 
-      const price = Number(variant.price);
+      // Admin GraphQL exposes MoneyV2 here, unlike the legacy REST response.
+      const price = Number(typeof variant.price === 'object' ? variant.price?.amount : variant.price);
       if (!Number.isFinite(price) || price < 0) throw new Error('Shopify returned an invalid variant price');
       item = {
         id: gid,

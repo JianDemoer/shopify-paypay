@@ -8,6 +8,7 @@ type StoreForm = Partial<StoreConfig> & { adminToken?: string; checkoutZonesJson
 export type AdminLocale = 'zh' | 'en';
 type AdminStore = PublicStoreConfig & {
   hasShopifyAdminAccessToken?: boolean;
+  hasShopifyAppProxySecret?: boolean;
   hasStripeSecretKey?: boolean;
   hasStripeWebhookSecret?: boolean;
   hasPaypalClientSecret?: boolean;
@@ -24,9 +25,9 @@ type StatusMessage =
 const translations = {
   zh: {
     pageTitle: '店铺配置',
-    pageDescription: '按店铺配置 Shopify、Stripe、PayPal、App Proxy、Draft Order 和加购设置。',
+    pageDescription: 'Shopify 安装连接自动管理；这里仅配置订单规则、支付渠道、配送、漏斗和加购。',
     storeCount: (count: number) => `${count} 个店铺`,
-    formTitle: '添加或更新店铺',
+    formTitle: '店铺业务配置',
     listTitle: '已配置店铺',
     loadStores: '加载店铺',
     saving: '保存中...',
@@ -37,6 +38,11 @@ const translations = {
     paypal: 'PayPal',
     configured: '已配置',
     notSet: '未配置',
+    connected: '已连接',
+    disconnected: '未连接，需要重新安装 App',
+    reinstall: '重新安装 Shopify App 后会自动恢复连接参数。',
+    automatic: '自动管理',
+    optional: '可选',
     saved: (domain: string) => `已保存 ${domain}`,
     installed: (domain: string) => `${domain} 已成功连接 Shopify。`,
     editSecrets: '出于安全原因，密钥不会回填。仅在需要替换密钥时重新输入。',
@@ -45,9 +51,9 @@ const translations = {
       storeName: '店铺名称',
       shopDomain: 'Shopify 店铺域名',
       currency: '货币',
-      storefrontAccessToken: 'Storefront API 访问令牌',
-      shopifyAdminAccessToken: 'Shopify Admin API 访问令牌',
-      shopifyAppProxySecret: 'Shopify App Proxy 密钥',
+      shopifyConnection: 'Shopify App 连接',
+      catalog: '商品目录来源',
+      appProxy: 'App Proxy',
       orderMode: '订单模式',
       stripePublishableKey: 'Stripe 可发布密钥',
       stripeSecretKey: 'Stripe 私钥',
@@ -72,16 +78,15 @@ const translations = {
       'Save failed': '保存店铺失败。',
       'Failed to save store': '保存店铺失败。',
       'A valid shop domain is required': '请输入有效的 Shopify 店铺域名。',
-      'Shopify Admin access token is required': '请输入 Shopify Admin API 访问令牌。',
       'Stripe publishable key is required': '请输入 Stripe 可发布密钥。',
       'Stripe secret key is required': '请输入 Stripe 私钥。',
     } as Record<string, string>,
   },
   en: {
     pageTitle: 'Store Configuration',
-    pageDescription: 'Configure Shopify, Stripe, PayPal, App Proxy, Draft Order, and upsell settings per store.',
+    pageDescription: 'Shopify installation is managed automatically; configure order rules, payments, shipping, funnels, and upsells here.',
     storeCount: (count: number) => `${count} ${count === 1 ? 'store' : 'stores'}`,
-    formTitle: 'Add or Update Store',
+    formTitle: 'Store Business Configuration',
     listTitle: 'Configured Stores',
     loadStores: 'Load stores',
     saving: 'Saving...',
@@ -92,6 +97,11 @@ const translations = {
     paypal: 'PayPal',
     configured: 'Configured',
     notSet: 'Not set',
+    connected: 'Connected',
+    disconnected: 'Disconnected. Reinstall the app.',
+    reinstall: 'Reinstalling the Shopify app restores the connection automatically.',
+    automatic: 'Automatic',
+    optional: 'Optional',
     saved: (domain: string) => `Saved ${domain}`,
     installed: (domain: string) => `${domain} connected to Shopify successfully.`,
     editSecrets: 'Secrets are not loaded back into the form. Re-enter them only if you want to replace them.',
@@ -100,9 +110,9 @@ const translations = {
       storeName: 'Store name',
       shopDomain: 'Shop domain',
       currency: 'Currency',
-      storefrontAccessToken: 'Storefront access token',
-      shopifyAdminAccessToken: 'Shopify Admin access token',
-      shopifyAppProxySecret: 'Shopify App Proxy secret',
+      shopifyConnection: 'Shopify App connection',
+      catalog: 'Catalog source',
+      appProxy: 'App Proxy',
       orderMode: 'Order mode',
       stripePublishableKey: 'Stripe publishable key',
       stripeSecretKey: 'Stripe secret key',
@@ -163,6 +173,28 @@ function statusText(message: StatusMessage, locale: AdminLocale) {
   return t.errors[message.text] || message.text;
 }
 
+function storeForm(store: AdminStore, adminToken = ''): StoreForm {
+  return {
+    ...emptyForm,
+    adminToken,
+    id: store.id,
+    name: store.name,
+    shopDomain: store.shopDomain,
+    currency: store.currency || 'USD',
+    orderMode: store.orderMode,
+    stripePublishableKey: store.stripePublishableKey,
+    paypalClientId: store.paypalClientId || '',
+    paypalEnv: store.paypalEnv || 'sandbox',
+    upsellProductId: store.upsellProductId || '',
+    upsellVariantId: store.upsellVariantId || '',
+    checkoutZonesJson: JSON.stringify(store.checkoutZones || [], null, 2),
+    funnelsJson: JSON.stringify(store.funnels || [], null, 2),
+    standardShipping: store.standardShipping ?? 3.99,
+    expressShipping: store.expressShipping ?? 5.99,
+    taxRate: store.taxRate ?? 0,
+  };
+}
+
 export function StoreAdmin({
   initialStores,
   adminTokenRequired = false,
@@ -176,10 +208,17 @@ export function StoreAdmin({
 }) {
   const [locale, setLocale] = useState<AdminLocale>(initialLocale);
   const [stores, setStores] = useState(initialStores);
-  const [form, setForm] = useState<StoreForm>(emptyForm);
+  const [form, setForm] = useState<StoreForm>(() => {
+    const installedStore = installedShop
+      ? initialStores.find((store) => store.shopDomain === installedShop)
+      : undefined;
+    return installedStore ? storeForm(installedStore) : emptyForm;
+  });
   const [message, setMessage] = useState<StatusMessage | null>(installedShop ? { kind: 'installed', domain: installedShop } : null);
   const [saving, setSaving] = useState(false);
   const t = translations[locale];
+  const selectedStore = form.id ? stores.find((store) => store.id === form.id) : undefined;
+  const shopifyConnected = Boolean(selectedStore?.hasShopifyAdminAccessToken && selectedStore?.hasShopifyAppProxySecret);
 
   function changeLocale(nextLocale: AdminLocale) {
     setLocale(nextLocale);
@@ -226,7 +265,7 @@ export function StoreAdmin({
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Save failed');
       await refresh(form.adminToken || '');
-      setForm({ ...emptyForm, adminToken: form.adminToken });
+      setForm(storeForm(json.store, form.adminToken));
       setMessage({ kind: 'saved', domain: json.store.shopDomain });
     } catch (error) {
       setMessage({ kind: 'error', text: error instanceof Error ? error.message : 'Save failed' });
@@ -236,25 +275,7 @@ export function StoreAdmin({
   }
 
   function edit(store: AdminStore) {
-    setForm({
-      ...emptyForm,
-      adminToken: form.adminToken,
-      id: store.id,
-      name: store.name,
-      shopDomain: store.shopDomain,
-      currency: store.currency || 'USD',
-      orderMode: store.orderMode,
-      stripePublishableKey: store.stripePublishableKey,
-      paypalClientId: store.paypalClientId || '',
-      paypalEnv: store.paypalEnv || 'sandbox',
-      upsellProductId: store.upsellProductId || '',
-      upsellVariantId: store.upsellVariantId || '',
-      checkoutZonesJson: JSON.stringify(store.checkoutZones || [], null, 2),
-      funnelsJson: JSON.stringify(store.funnels || [], null, 2),
-      standardShipping: store.standardShipping ?? 3.99,
-      expressShipping: store.expressShipping ?? 5.99,
-      taxRate: store.taxRate ?? 0,
-    });
+    setForm(storeForm(store, form.adminToken));
     setMessage({ kind: 'editSecrets' });
   }
 
@@ -287,11 +308,15 @@ export function StoreAdmin({
             </>
           )}
           <Field label={t.fields.storeName} value={form.name || ''} onChange={(value) => update('name', value)} />
-          <Field label={t.fields.shopDomain} value={form.shopDomain || ''} onChange={(value) => update('shopDomain', value)} placeholder="example.myshopify.com" />
+          <Field label={t.fields.shopDomain} value={form.shopDomain || ''} onChange={(value) => update('shopDomain', value)} placeholder="example.myshopify.com" readOnly={Boolean(form.id)} />
           <Field label={t.fields.currency} value={form.currency || 'USD'} onChange={(value) => update('currency', value)} placeholder="USD" />
-          <Field label={t.fields.storefrontAccessToken} value={form.storefrontAccessToken || ''} onChange={(value) => update('storefrontAccessToken', value)} password />
-          <Field label={t.fields.shopifyAdminAccessToken} value={form.shopifyAdminAccessToken || ''} onChange={(value) => update('shopifyAdminAccessToken', value)} password />
-          <Field label={t.fields.shopifyAppProxySecret} value={form.shopifyAppProxySecret || ''} onChange={(value) => update('shopifyAppProxySecret', value)} password />
+          <div className={styles.connectionNotice}>
+            <strong>{t.fields.shopifyConnection}</strong>
+            <span>{shopifyConnected ? `${t.connected} · ${t.automatic}` : t.disconnected}</span>
+            <small>{shopifyConnected
+              ? `${t.fields.catalog}: ${t.automatic}; ${t.fields.appProxy}: ${t.automatic}`
+              : t.reinstall}</small>
+          </div>
           <label className={styles.field}>
             <span>{t.fields.orderMode}</span>
             <select value={form.orderMode || 'draft_order'} onChange={(event) => update('orderMode', event.target.value)}>
@@ -338,6 +363,9 @@ export function StoreAdmin({
               <button key={store.id} type="button" className={styles.storeCard} onClick={() => edit(store)}>
                 <strong>{store.name}</strong>
                 <span>{store.shopDomain}</span>
+                <small>{t.fields.shopifyConnection}: {store.hasShopifyAdminAccessToken ? t.connected : t.notSet}</small>
+                <small>{t.fields.catalog}: {store.hasShopifyAdminAccessToken ? t.automatic : t.notSet}</small>
+                <small>{t.fields.appProxy}: {store.hasShopifyAppProxySecret ? t.automatic : t.notSet}</small>
                 <small>{t.mode}: {t.orderModes[store.orderMode] || store.orderMode}</small>
                 <small>{t.stripe}: {mask(store.stripePublishableKey, t.configured, t.notSet)}</small>
                 <small>{t.paypal}: {store.paypalClientId ? t.configured : t.notSet}</small>
@@ -358,12 +386,14 @@ function Field({
   value,
   placeholder = '',
   password = false,
+  readOnly = false,
   onChange,
 }: {
   label: string;
   value: string;
   placeholder?: string;
   password?: boolean;
+  readOnly?: boolean;
   onChange: (value: string) => void;
 }) {
   return (
@@ -373,6 +403,7 @@ function Field({
         type={password ? 'password' : 'text'}
         value={value}
         placeholder={placeholder}
+        readOnly={readOnly}
         onChange={(event) => onChange(event.target.value)}
       />
     </label>

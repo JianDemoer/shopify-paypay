@@ -2,7 +2,7 @@ import { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
-import { getCollection } from '@/lib/shopify';
+import { getCollection, ShopifyConfigurationError } from '@/lib/shopify';
 import { ProductCard } from '@/components/ProductCard';
 import styles from './page.module.css';
 
@@ -12,7 +12,13 @@ type Props = {
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { handle } = await params;
-  const collection = await getCollection(handle);
+  let collection;
+  try {
+    collection = await getCollection(handle);
+  } catch (error) {
+    if (!(error instanceof ShopifyConfigurationError)) throw error;
+    return { title: 'Shopify app not installed' };
+  }
 
   if (!collection) {
     return {
@@ -48,7 +54,21 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function CollectionPage({ params }: Props) {
   const { handle } = await params;
-  const collection = await getCollection(handle);
+  let collection;
+  try {
+    collection = await getCollection(handle);
+  } catch (error) {
+    if (!(error instanceof ShopifyConfigurationError)) throw error;
+    return (
+      <div className={styles.container}>
+        <div className={styles.empty}>
+          <h1 className={styles.emptyTitle}>Shopify app not installed</h1>
+          <p className={styles.emptyText}>Install the Shopify app to load collections automatically.</p>
+          <Link href="/install" className={styles.backButton}>Install app</Link>
+        </div>
+      </div>
+    );
+  }
 
   if (!collection) {
     notFound();

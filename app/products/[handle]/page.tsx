@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
     product = await getProduct(handle);
   } catch (error) {
     if (!(error instanceof ShopifyConfigurationError)) throw error;
-    return { title: 'Storefront not configured' };
+    return { title: 'Shopify app not installed' };
   }
 
   if (!product) {
@@ -74,9 +74,9 @@ export default async function ProductPage({ params }: ProductPageProps) {
     return (
       <div className={styles.container}>
         <div className={styles.infoContainer}>
-          <h1 className={styles.title}>Storefront not configured</h1>
-          <p className={styles.description}>Add a Shopify Storefront access token before loading products.</p>
-          <Link href="/admin/stores">Configure store</Link>
+          <h1 className={styles.title}>Shopify app not installed</h1>
+          <p className={styles.description}>Install the Shopify app to load products automatically.</p>
+          <Link href="/install">Install app</Link>
         </div>
       </div>
     );

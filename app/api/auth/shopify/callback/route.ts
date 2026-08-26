@@ -44,16 +44,19 @@ export async function GET(request: NextRequest) {
     console.error('Shopify OAuth callback failed:', error);
     return new Response(error instanceof Error ? error.message : 'Shopify installation failed.', { status: 500 });
   }
-  const destination = new URL('/admin/stores', appUrl);
+  const adminConfigEnabled = Boolean(process.env.ADMIN_CONFIG_TOKEN?.trim());
+  const destination = new URL(adminConfigEnabled ? '/admin/stores' : '/install', appUrl);
   destination.searchParams.set('shop', shop);
   destination.searchParams.set('installed', '1');
   const response = NextResponse.redirect(destination);
-  response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSession(shop), {
-    httpOnly: true,
-    secure: destination.protocol === 'https:',
-    sameSite: 'lax',
-    path: '/',
-    maxAge: ADMIN_SESSION_MAX_AGE,
-  });
+  if (adminConfigEnabled) {
+    response.cookies.set(ADMIN_SESSION_COOKIE, createAdminSession(shop), {
+      httpOnly: true,
+      secure: destination.protocol === 'https:',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: ADMIN_SESSION_MAX_AGE,
+    });
+  }
   return response;
 }

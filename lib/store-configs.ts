@@ -5,6 +5,7 @@ import { isProductionRuntime } from './runtime';
 import type { CheckoutZone, FunnelConfig } from './funnel-configs';
 import { normalizeCheckoutZones, normalizeFunnelConfigs } from './funnel-configs';
 import { upstashRestConfig } from './upstash-config';
+import { shopifyClientSecrets } from './shopify-oauth';
 
 export interface StoreConfig {
   id: string;
@@ -14,6 +15,7 @@ export interface StoreConfig {
   storefrontAccessToken?: string;
   shopifyAdminAccessToken: string;
   shopifyAppProxySecret?: string;
+  shopifyScopes?: string;
   orderMode: 'direct_order' | 'draft_order';
   stripePublishableKey: string;
   stripeSecretKey: string;
@@ -166,6 +168,7 @@ function fallbackStore(): StoreConfig | null {
     storefrontAccessToken: process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN,
     shopifyAdminAccessToken: adminToken,
     shopifyAppProxySecret: process.env.SHOPIFY_APP_PROXY_SECRET || process.env.SHOPIFY_API_SECRET,
+    shopifyScopes: process.env.SHOPIFY_API_SCOPES || '',
     orderMode: process.env.SHOPIFY_ORDER_MODE === 'draft_order' ? 'draft_order' : 'direct_order',
     stripePublishableKey,
     stripeSecretKey,
@@ -274,27 +277,31 @@ export async function saveStoreConfig(input: Partial<StoreConfig>) {
   if (!shopDomain || !/^[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(shopDomain)) {
     throw new Error('A valid shop domain is required');
   }
-  const id = input.id ? slug(input.id) : shopDomain;
-  const existingIndex = configs.findIndex((item) => item.id === id || item.shopDomain === shopDomain);
+  const inputId = input.id ? slug(input.id) : '';
+  const existingIndex = configs.findIndex((item) => item.id === inputId || item.shopDomain === shopDomain);
   const existing = existingIndex >= 0 ? configs[existingIndex] : null;
-  const shopifyAdminAccessToken = input.shopifyAdminAccessToken?.trim() || existing?.shopifyAdminAccessToken || '';
-  const stripeSecretKey = input.stripeSecretKey?.trim() || existing?.stripeSecretKey || '';
 
-  if (!shopifyAdminAccessToken) throw new Error('Shopify Admin access token is required');
-  if (!input.stripePublishableKey && !existing?.stripePublishableKey) throw new Error('Stripe publishable key is required');
-  if (!stripeSecretKey) throw new Error('Stripe secret key is required');
+  // Shopify connection data is created only by the OAuth callback. Keeping it
+  // out of this endpoint prevents a configuration request from attaching one
+  // store's Admin token to another store.
+  if (!existing) throw new Error('Install the Shopify app before editing a store');
+  if (existing.shopDomain !== shopDomain || (inputId && existing.id !== inputId)) {
+    throw new Error('A Shopify store domain cannot be changed after installation');
+  }
+  const id = existing.id;
 
   const config: StoreConfig = {
     id,
     name: input.name?.trim() || shopDomain,
     shopDomain,
     currency: normalizeCurrency(input.currency || existing?.currency),
-    storefrontAccessToken: input.storefrontAccessToken?.trim() || existing?.storefrontAccessToken || '',
-    shopifyAdminAccessToken,
-    shopifyAppProxySecret: input.shopifyAppProxySecret?.trim() || existing?.shopifyAppProxySecret || '',
+    storefrontAccessToken: existing.storefrontAccessToken || '',
+    shopifyAdminAccessToken: existing.shopifyAdminAccessToken || '',
+    shopifyAppProxySecret: existing.shopifyAppProxySecret || '',
+    shopifyScopes: existing.shopifyScopes || '',
     orderMode: input.orderMode === 'draft_order' ? 'draft_order' : 'direct_order',
     stripePublishableKey: input.stripePublishableKey?.trim() || existing?.stripePublishableKey || '',
-    stripeSecretKey,
+    stripeSecretKey: input.stripeSecretKey?.trim() || existing.stripeSecretKey || '',
     stripeWebhookSecret: input.stripeWebhookSecret?.trim() || existing?.stripeWebhookSecret || '',
     stripeWebhookSecretProd: input.stripeWebhookSecretProd?.trim() || existing?.stripeWebhookSecretProd || '',
     paypalClientId: input.paypalClientId?.trim() || existing?.paypalClientId || '',
@@ -368,7 +375,8 @@ export async function saveShopifyInstallation(input: {
     currency: existing?.currency || 'USD',
     storefrontAccessToken: existing?.storefrontAccessToken || '',
     shopifyAdminAccessToken: input.accessToken,
-    shopifyAppProxySecret: process.env.SHOPIFY_API_SECRET || existing?.shopifyAppProxySecret || '',
+    shopifyAppProxySecret: process.env.SHOPIFY_APP_PROXY_SECRET || shopifyClientSecrets()[0] || existing?.shopifyAppProxySecret || '',
+    shopifyScopes: input.scopes?.trim() || existing?.shopifyScopes || '',
     orderMode: existing?.orderMode || 'draft_order',
     stripePublishableKey: existing?.stripePublishableKey || '',
     stripeSecretKey: existing?.stripeSecretKey || '',
@@ -391,6 +399,30 @@ export async function saveShopifyInstallation(input: {
   else configs.push(config);
   await writeConfigFile(configs);
   return config;
+}
+
+/**
+ * Keep merchant-defined checkout rules on uninstall, but remove every
+ * credential that could continue to access the former shop. A later OAuth
+ * install repopulates these fields for the same store domain.
+ */
+export async function revokeShopifyInstallation(shopDomain: string) {
+  const configs = await readConfigFile();
+  const normalizedDomain = normalizeDomain(shopDomain);
+  const index = configs.findIndex((config) => config.shopDomain === normalizedDomain);
+  if (index < 0) return false;
+
+  const current = configs[index];
+  configs[index] = {
+    ...current,
+    storefrontAccessToken: '',
+    shopifyAdminAccessToken: '',
+    shopifyAppProxySecret: '',
+    shopifyScopes: '',
+    updatedAt: new Date().toISOString(),
+  };
+  await writeConfigFile(configs);
+  return true;
 }
 
 export async function deleteStoreConfig(id: string) {

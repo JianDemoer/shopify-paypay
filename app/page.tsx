@@ -81,9 +81,9 @@ export default async function Home() {
         <h2 className={styles.sectionTitle} data-cy="featured-products-title">Featured Products</h2>
         {needsConfiguration ? (
           <div className={styles.emptyState}>
-            <h3>Storefront not configured</h3>
-            <p>Add a default Shopify store before loading products.</p>
-            <Link href="/admin/stores" className={`${styles.button} ${styles.buttonPrimary}`}>Configure store</Link>
+            <h3>Shopify app not installed</h3>
+            <p>Install the Shopify app to connect this store and load its products automatically.</p>
+            <Link href="/install" className={`${styles.button} ${styles.buttonPrimary}`}>Install app</Link>
           </div>
         ) : (
           <div className={styles.productsGrid} data-cy="featured-products-grid">

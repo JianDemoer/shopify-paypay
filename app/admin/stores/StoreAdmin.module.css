@@ -110,6 +110,24 @@
   font-weight: 700;
 }
 
+.connectionNotice {
+  display: grid;
+  gap: 5px;
+  margin: 4px 0 16px;
+  padding: 12px 13px;
+  border: 1px solid #cce3d2;
+  border-radius: 6px;
+  background: #f3fbf5;
+  color: #1f5130;
+}
+
+.connectionNotice span,
+.connectionNotice small {
+  color: #4a6f54;
+  font-size: 12px;
+  font-weight: 400;
+}
+
 .field input,
 .field select,
 .codeField {
