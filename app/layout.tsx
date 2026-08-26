@@ -12,14 +12,13 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://shopify-omni-checkout.vercel.app'),
   title: {
-    default: 'Modern Ecommerce Store | Premium Tech T-Shirts',
-    template: '%s | Modern Ecommerce Store',
+    default: 'Omni Checkout',
+    template: '%s | Omni Checkout',
   },
-  description: 'Shop premium tech-themed t-shirts with our modern headless ecommerce platform. Browse collections, family plans, and enjoy AI-powered shopping assistance.',
-  keywords: ['ecommerce', 'tech t-shirts', 'shopify', 'family plans', 'premium apparel', 'online shopping'],
-  authors: [{ name: 'Modern Ecommerce Store' }],
-  creator: 'Modern Ecommerce Store',
-  publisher: 'Modern Ecommerce Store',
+  description: 'Secure App Proxy checkout and Draft Order routing for Shopify stores.',
+  authors: [{ name: 'Omni Checkout' }],
+  creator: 'Omni Checkout',
+  publisher: 'Omni Checkout',
   formatDetection: {
     email: false,
     address: false,
@@ -29,37 +28,22 @@ export const metadata: Metadata = {
     type: 'website',
     locale: 'en_US',
     url: '/',
-    title: 'Modern Ecommerce Store | Premium Tech T-Shirts',
-    description: 'Shop premium tech-themed t-shirts with our modern headless ecommerce platform.',
-    siteName: 'Modern Ecommerce Store',
-    images: [{
-      url: '/og-image.jpg',
-      width: 1200,
-      height: 630,
-      alt: 'Modern Ecommerce Store',
-    }],
+    title: 'Omni Checkout',
+    description: 'Secure App Proxy checkout and Draft Order routing for Shopify stores.',
+    siteName: 'Omni Checkout',
   },
   twitter: {
-    card: 'summary_large_image',
-    title: 'Modern Ecommerce Store | Premium Tech T-Shirts',
-    description: 'Shop premium tech-themed t-shirts with our modern headless ecommerce platform.',
-    images: ['/og-image.jpg'],
+    card: 'summary',
+    title: 'Omni Checkout',
+    description: 'Secure App Proxy checkout and Draft Order routing for Shopify stores.',
   },
   robots: {
-    index: true,
-    follow: true,
+    index: false,
+    follow: false,
     googleBot: {
-      index: true,
-      follow: true,
-      'max-video-preview': -1,
-      'max-image-preview': 'large',
-      'max-snippet': -1,
+      index: false,
+      follow: false,
     },
-  },
-  verification: {
-    // Add when you have these
-    // google: 'your-google-verification-code',
-    // yandex: 'your-yandex-verification-code',
   },
 };
 

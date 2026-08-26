@@ -105,6 +105,7 @@ describe('Shopify checkout item resolver', () => {
     });
     const completionRequest = JSON.parse(String((global.fetch as jest.Mock).mock.calls[2][1].body));
     expect(completionRequest.query).toContain('draftOrderComplete');
+    expect(completionRequest.query.match(/userErrors\s*\{/g)).toHaveLength(1);
     expect(completionRequest.variables.id).toBe('gid://shopify/DraftOrder/10');
   });
 
